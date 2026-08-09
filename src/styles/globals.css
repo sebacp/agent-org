@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #eceae4;
+  --color-chrome: #f7f6f2;
+  --color-panel: #ffffff;
+  --color-raised: #ecebe4;
+  --color-hairline: #e2e0d8;
+  --color-ink: #16150f;
+  --color-dim: #6e6c63;
+  --color-faint: #a3a096;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+}
+
+html,
+body,
+#__next {
+  height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: #e2e0d8;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: #d7d4cc;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #bcb8ae;
+  background-clip: content-box;
+}
+
+/* --- React Flow surface --- */
+
+.react-flow {
+  --xy-edge-stroke-default: #c4c1b8;
+  --xy-edge-stroke-selected-default: var(--color-ink);
+  --xy-connectionline-stroke-default: var(--color-ink);
+}
+
+.react-flow__node {
+  font-family: var(--font-sans);
+}
+
+/* Nodes paint after the label layer, so an edge label crossing a card gets
+   clipped unless it is lifted above them. */
+.react-flow__edgelabel-renderer {
+  z-index: 5;
+}
+
+.react-flow__handle {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-panel);
+  border: 1px solid #c4c1b8;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.react-flow__handle:hover,
+.react-flow__handle.connectingfrom,
+.react-flow__handle.connectingto {
+  transform: scale(1.4);
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+}
+
+.react-flow__handle-top {
+  top: -4px;
+}
+
+.react-flow__handle-bottom {
+  bottom: -4px;
+}
+
+.react-flow__controls {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--color-hairline);
+  box-shadow: none;
+}
+
+.react-flow__controls-button {
+  background: var(--color-panel);
+  border-bottom: 1px solid var(--color-hairline);
+  color: var(--color-dim);
+  width: 26px;
+  height: 26px;
+}
+
+.react-flow__controls-button:hover {
+  background: var(--color-raised);
+  color: var(--color-ink);
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.react-flow__attribution {
+  background: transparent;
+  color: #c9c6bd;
+  font-size: 10px;
+}
+
+.react-flow__attribution a {
+  color: inherit;
+}
