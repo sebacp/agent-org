@@ -9,6 +9,8 @@ export function systemPrompt(
   agent: RunAgent,
   company: CompanyProfile,
   department: DepartmentDef | undefined,
+  /** Labels of the data sources wired to this agent's area. */
+  sources: string[] = [],
 ): string {
   const blocks = [
     `Trabajás en ${company.name.trim() || "la compañía"}.`,
@@ -19,12 +21,12 @@ export function systemPrompt(
       agent.name.trim() ? ` (${agent.name.trim()})` : ""
     }.\n${agent.instructions.trim()}`,
     `La empresa tiene una biblioteca de archivos compartida. Antes de responder algo que ya podría estar escrito, buscá ahí con buscar_archivos o listar_archivos, y leé lo que sirva con leer_archivo. Si producís algo que valga la pena conservar (un plan, un análisis, un texto terminado), guardalo con guardar_archivo y mencioná en tu respuesta que lo guardaste. Para una respuesta corta no hace falta guardar nada.`,
+    sources.length > 0 &&
+      `Tu área tiene fuentes de datos conectadas: ${sources.join(", ")}. Sus herramientas empiezan con "fuente__". Si lo que necesitás son datos reales, traelos de ahí en lugar de estimar; si la fuente no responde, decilo y seguí.`,
     // Blocked agents used to write requirement documents that nobody could act
     // on, which is the failure this board exists to absorb.
     `Si te falta algo que no está en la biblioteca (un dato, un acceso, una decisión que no te toca), no escribas un documento pidiéndolo ni inventes el dato: dejalo anotado con crear_pendiente y seguí con la parte que sí podés resolver. Mirá listar_pendientes antes de arrancar, porque lo que te falta puede estar ya contestado ahí; si resolviste uno, cerralo con cerrar_pendiente.`,
-    // The panel renders answers as plain text, so markdown would leak as literal
-    // asterisks and hashes.
-    "Escribís en español rioplatense. Sos concreto y no rellenás.\nEscribís en texto plano: nada de markdown, ni asteriscos ni almohadillas. Para enumerar usás guiones al principio de la línea.",
+    "Escribís en español rioplatense. Sos concreto y no rellenás.\nPodés usar markdown liviano: títulos con ##, listas con guiones, **negrita** para lo importante y tablas cuando compares cosas. No abras bloques de código salvo que el contenido sea código.",
   ];
   return blocks.filter(Boolean).join("\n\n");
 }
@@ -67,6 +69,8 @@ Reglas:
 export function consolidatePrompt(
   task: string,
   answers: { agent: RunAgent; text: string }[],
+  /** Roles whose work fell over, so the answer can admit the hole. */
+  missing: string[] = [],
 ): string {
   const body = answers
     .map((a) => `## ${a.agent.role}${a.agent.name ? ` — ${a.agent.name}` : ""}
@@ -82,7 +86,11 @@ ${task}
 Tu equipo respondió:
 
 ${body}
-
+${
+  missing.length
+    ? `\nNo llegaron a contestar: ${missing.join(", ")}. Armá la respuesta con lo que tenés y aclará en una línea al final qué quedó sin cubrir.\n`
+    : ""
+}
 Escribí la respuesta final. Una sola postura, no un resumen de quién dijo qué.
 Si hay contradicciones, resolvelas y decí con qué te quedás y por qué.`;
 }

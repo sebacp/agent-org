@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import type { TaskAttachment } from "@/lib/task-types";
 import { deleteTask, listTasks, updateTask } from "@/server/tasks";
 
 export default async function handler(
@@ -28,7 +29,12 @@ export default async function handler(
         res.status(400).json({ error: "Pedido inválido." });
         return;
       }
-      const task = await updateTask(orgId, body.id, { answer: body.answer });
+      const task = await updateTask(orgId, body.id, {
+        answer: body.answer,
+        attachments: Array.isArray(body.attachments)
+          ? (body.attachments as TaskAttachment[])
+          : undefined,
+      });
       if (!task) {
         res.status(404).json({ error: "No existe ese pendiente." });
         return;

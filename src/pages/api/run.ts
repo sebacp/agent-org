@@ -8,6 +8,7 @@ import {
   type RunRequest,
   type ThreadStep,
 } from "@/lib/run-types";
+import { addUsage, NO_USAGE, type RunUsage } from "@/lib/usage";
 import { runOrg } from "@/server/orchestrator";
 import { saveThread, threadTitle } from "@/server/threads";
 
@@ -131,6 +132,7 @@ export default async function handler(
 
   const roleOf = new Map(request.agents.map((a) => [a.id, a.role]));
   const steps: ThreadStep[] = [];
+  let usage: RunUsage = NO_USAGE;
 
   const stepText = (event: RunEvent): string | null => {
     switch (event.type) {
@@ -138,6 +140,8 @@ export default async function handler(
         return `${roleOf.get(event.toId) ?? event.toId}: ${event.task}`;
       case "tool":
         return event.summary;
+      case "failed":
+        return event.message;
       // The root's result *is* the final answer, which the thread stores apart.
       case "result":
         return event.agentId === request.rootId ? null : event.text;
@@ -148,6 +152,9 @@ export default async function handler(
 
   // The trace is what the thread replays later, so it is built as it streams.
   const send = (event: RunEvent) => {
+    if (event.type === "usage") {
+      usage = addUsage(usage, { ...event.usage, cost: event.cost });
+    }
     const text = stepText(event);
     if (text !== null && "agentId" in event && event.agentId) {
       steps.push({
@@ -172,6 +179,7 @@ export default async function handler(
       task: request.task,
       answer,
       steps,
+      usage,
     });
   } catch (error) {
     if (!controller.signal.aborted) {

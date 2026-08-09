@@ -4,6 +4,7 @@ import {
   type RunEvent,
   type RunRequest,
 } from "@/lib/run-types";
+import { modelCost, type TokenUsage } from "@/lib/usage";
 import { chat } from "@/server/deepseek";
 import {
   consolidatePrompt,
@@ -11,7 +12,8 @@ import {
   splitPrompt,
   systemPrompt,
 } from "@/server/prompts";
-import { TOOLS, runTool } from "@/server/tools";
+import { sourcesForDepartment } from "@/server/sources";
+import { runTool, toolsFor, type ToolSchema } from "@/server/tools";
 
 interface Assignment {
   id: string;
@@ -60,6 +62,12 @@ function parseAssignments(raw: string, reports: RunAgent[]): Assignment[] {
   return reports.map((r) => ({ id: r.id, encargo: "" }));
 }
 
+function reason(error: unknown): string {
+  return error instanceof Error && error.message
+    ? error.message
+    : "se cortó sin explicación";
+}
+
 export async function runOrg(
   request: RunRequest,
   emit: (event: RunEvent) => void,
@@ -80,11 +88,17 @@ export async function runOrg(
     const agent = byId.get(agentId);
     if (!agent) return "";
 
+    const sources = await sourcesForDepartment(request.orgId, agent.department);
     const system = systemPrompt(
       agent,
       request.company,
       departmentById.get(agent.department),
+      sources.map((s) => s.label || "fuente"),
     );
+    // Reaching a source means connecting to it, so the list is only built if a
+    // branch actually offers tools.
+    let pending: Promise<ToolSchema[]> | null = null;
+    const tools = () => (pending ??= toolsFor(request.orgId, sources));
     // Ancestors are excluded so a manually drawn cycle can't recurse forever.
     const reports = (request.reports[agentId] ?? [])
       .filter((id) => !ancestors.has(id) && byId.has(id))
@@ -98,6 +112,7 @@ export async function runOrg(
         toolCall.function.name,
         toolCall.function.arguments,
         agent,
+        sources,
       );
       emit({
         type: "tool",
@@ -108,6 +123,10 @@ export async function runOrg(
       return outcome.content;
     };
 
+    const onUsage = (usage: TokenUsage) => {
+      emit({ type: "usage", agentId, usage, cost: modelCost(agent.model, usage) });
+    };
+
     try {
       if (reports.length === 0 || depth >= RUN_LIMITS.maxDepth) {
         emit({ type: "status", agentId, status: "working" });
@@ -116,8 +135,9 @@ export async function runOrg(
           model: agent.model,
           system,
           user: leafPrompt(task),
-          tools: TOOLS,
+          tools: await tools(),
           onTool,
+          onUsage,
           signal,
         });
         emit({ type: "result", agentId, text });
@@ -132,12 +152,14 @@ export async function runOrg(
         model: agent.model,
         system,
         user: splitPrompt(task, reports),
+        onUsage,
         signal,
       });
       const assignments = parseAssignments(plan, reports);
 
       emit({ type: "status", agentId, status: "waiting" });
       const nextAncestors = new Set(ancestors).add(agentId);
+      let firstFailure: unknown = null;
       const answers = await Promise.all(
         assignments.map(async (assignment) => {
           emit({
@@ -146,17 +168,35 @@ export async function runOrg(
             toId: assignment.id,
             task: assignment.encargo || task,
           });
-          return {
-            agent: byId.get(assignment.id)!,
-            text: await execute(
-              assignment.id,
-              assignment.encargo || task,
-              depth + 1,
-              nextAncestors,
-            ),
-          };
+          const child = byId.get(assignment.id)!;
+          try {
+            return {
+              agent: child,
+              text: await execute(
+                assignment.id,
+                assignment.encargo || task,
+                depth + 1,
+                nextAncestors,
+              ),
+            };
+          } catch (error) {
+            // Stopping the run is a decision, not something to route around.
+            if (signal.aborted) throw error;
+            firstFailure ??= error;
+            emit({
+              type: "failed",
+              agentId: assignment.id,
+              message: reason(error),
+            });
+            return { agent: child, text: "" };
+          }
         }),
       );
+
+      const usable = answers.filter((a) => a.agent && a.text);
+      // Nobody delivered, so there is nothing to consolidate and no point in
+      // paying for a summary of silence.
+      if (usable.length === 0 && firstFailure) throw firstFailure;
 
       emit({ type: "status", agentId, status: "working" });
       const text = await chat({
@@ -165,10 +205,12 @@ export async function runOrg(
         system,
         user: consolidatePrompt(
           task,
-          answers.filter((a) => a.agent && a.text),
+          usable,
+          answers.filter((a) => !a.text).map((a) => a.agent.role),
         ),
-        tools: TOOLS,
+        tools: await tools(),
         onTool,
+        onUsage,
         signal,
       });
       emit({ type: "result", agentId, text });

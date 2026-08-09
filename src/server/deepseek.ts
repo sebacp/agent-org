@@ -1,4 +1,5 @@
 import { modelThinks, type ModelId } from "@/lib/models";
+import type { TokenUsage } from "@/lib/usage";
 import type { ToolSchema } from "@/server/tools";
 
 const ENDPOINT = "https://api.deepseek.com/chat/completions";
@@ -21,9 +22,27 @@ interface ChatResponse {
   choices?: {
     message?: { content?: string | null; tool_calls?: ToolCall[] };
   }[];
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    prompt_cache_hit_tokens?: number;
+    prompt_cache_miss_tokens?: number;
+  };
 }
 
 export class DeepSeekError extends Error {}
+
+/** Older responses skip the cache split, so the miss count is derived. */
+function readUsage(raw: ChatResponse["usage"]): TokenUsage {
+  const cached = raw?.prompt_cache_hit_tokens ?? 0;
+  return {
+    cached,
+    input:
+      raw?.prompt_cache_miss_tokens ??
+      Math.max((raw?.prompt_tokens ?? 0) - cached, 0),
+    output: raw?.completion_tokens ?? 0,
+  };
+}
 
 async function call(options: {
   apiKey: string;
@@ -31,7 +50,7 @@ async function call(options: {
   messages: ChatMessage[];
   tools?: ToolSchema[];
   signal?: AbortSignal;
-}): Promise<{ content: string; toolCalls: ToolCall[] }> {
+}): Promise<{ content: string; toolCalls: ToolCall[]; usage: TokenUsage }> {
   const { apiKey, model, messages, tools, signal } = options;
 
   const response = await fetch(ENDPOINT, {
@@ -65,18 +84,20 @@ async function call(options: {
     );
   }
 
-  const message = ((await response.json()) as ChatResponse).choices?.[0]
-    ?.message;
+  const body = (await response.json()) as ChatResponse;
+  const message = body.choices?.[0]?.message;
   return {
     content: message?.content?.trim() ?? "",
     toolCalls: message?.tool_calls ?? [],
+    usage: readUsage(body.usage),
   };
 }
 
 /**
  * Runs the model to a final text answer, servicing any tool calls it makes
  * along the way. `onTool` both executes a call and reports it, so the caller
- * decides what a tool actually does.
+ * decides what a tool actually does. `onUsage` fires per round rather than at
+ * the end, so tokens burned before a failure are still billed.
  */
 export async function chat(options: {
   apiKey: string;
@@ -85,9 +106,11 @@ export async function chat(options: {
   user: string;
   tools?: ToolSchema[];
   onTool?: (call: ToolCall) => Promise<string>;
+  onUsage?: (usage: TokenUsage) => void;
   signal?: AbortSignal;
 }): Promise<string> {
-  const { apiKey, model, system, user, tools, onTool, signal } = options;
+  const { apiKey, model, system, user, tools, onTool, onUsage, signal } =
+    options;
   const messages: ChatMessage[] = [
     { role: "system", content: system },
     { role: "user", content: user },
@@ -96,13 +119,14 @@ export async function chat(options: {
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
     // On the last round the tools are withheld, which forces a text answer.
     const offerTools = onTool && round < MAX_TOOL_ROUNDS ? tools : undefined;
-    const { content, toolCalls } = await call({
+    const { content, toolCalls, usage } = await call({
       apiKey,
       model,
       messages,
       tools: offerTools,
       signal,
     });
+    onUsage?.(usage);
 
     if (!onTool || toolCalls.length === 0) {
       if (!content) throw new DeepSeekError("DeepSeek devolvió una respuesta vacía.");

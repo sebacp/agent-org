@@ -1,5 +1,6 @@
 import type { ModelId } from "@/lib/models";
 import type { CompanyProfile, DepartmentDef } from "@/lib/types";
+import type { RunUsage, TokenUsage } from "@/lib/usage";
 
 export type AgentStatus =
   | "idle"
@@ -36,6 +37,9 @@ export type RunEvent =
   | { type: "delegate"; agentId: string; toId: string; task: string }
   | { type: "tool"; agentId: string; summary: string; fileId?: string }
   | { type: "result"; agentId: string; text: string }
+  | { type: "usage"; agentId: string; usage: TokenUsage; cost: number }
+  /** One agent gave up; the run keeps going without it. */
+  | { type: "failed"; agentId: string; message: string }
   | { type: "done"; text: string }
   | { type: "error"; message: string; agentId?: string };
 
@@ -43,7 +47,7 @@ export type RunEvent =
 export interface ThreadStep {
   agentId: string;
   role: string;
-  kind: "delegate" | "tool" | "result";
+  kind: "delegate" | "tool" | "result" | "failed";
   text: string;
 }
 
@@ -53,6 +57,8 @@ export interface Thread {
   task: string;
   answer: string;
   steps: ThreadStep[];
+  /** Absent on threads saved before the run started counting tokens. */
+  usage?: RunUsage;
   createdAt: string;
 }
 

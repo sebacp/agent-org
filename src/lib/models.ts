@@ -1,15 +1,18 @@
+/** `price` is USD per million tokens; update it when DeepSeek moves its list. */
 export const MODELS = [
   {
     id: "deepseek-v4-pro",
     label: "V4 Pro",
     hint: "Razona antes de responder",
     thinking: true,
+    price: { cached: 0.07, input: 0.55, output: 1.68 },
   },
   {
     id: "deepseek-v4-flash",
     label: "V4 Flash",
     hint: "Rápido y barato",
     thinking: false,
+    price: { cached: 0.028, input: 0.28, output: 0.42 },
   },
 ] as const;
 

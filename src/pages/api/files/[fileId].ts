@@ -1,6 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { deleteFile, getFile } from "@/server/files";
 
+/** The viewer only has to be readable, so a big export travels as a head. */
+const PREVIEW_CHARS = 40_000;
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
@@ -23,7 +26,10 @@ export default async function handler(
       res.status(404).json({ error: "No existe ese archivo." });
       return;
     }
-    res.status(200).json({ file });
+    // `chars` still carries the real length, so the client can say it cut.
+    res.status(200).json({
+      file: { ...file, content: file.content.slice(0, PREVIEW_CHARS) },
+    });
   } catch (error) {
     res.status(400).json({
       error: error instanceof Error ? error.message : "No pude leer el archivo.",

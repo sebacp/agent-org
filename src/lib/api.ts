@@ -1,6 +1,7 @@
 import type { FileFilter, FileMeta, FileRecord } from "@/lib/file-types";
 import type { Thread } from "@/lib/run-types";
-import type { PendingTask } from "@/lib/task-types";
+import type { SourceProbe, SourceView } from "@/lib/source-types";
+import type { PendingTask, TaskAttachment } from "@/lib/task-types";
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -51,6 +52,21 @@ export async function fetchFile(
   return file;
 }
 
+export async function uploadFile(
+  orgId: string,
+  input: { title: string; content: string; area: string },
+): Promise<FileMeta> {
+  const { file } = await json<{ file: FileMeta }>(
+    `/api/files?orgId=${encodeURIComponent(orgId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  return file;
+}
+
 export async function removeFile(orgId: string, fileId: string): Promise<void> {
   await json(
     `/api/files/${encodeURIComponent(fileId)}?orgId=${encodeURIComponent(orgId)}`,
@@ -69,13 +85,14 @@ export async function answerTask(
   orgId: string,
   id: string,
   answer: string,
+  attachments: TaskAttachment[],
 ): Promise<PendingTask> {
   const { task } = await json<{ task: PendingTask }>(
     `/api/tasks?orgId=${encodeURIComponent(orgId)}`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, answer }),
+      body: JSON.stringify({ id, answer, attachments }),
     },
   );
   return task;
@@ -84,6 +101,35 @@ export async function answerTask(
 export async function removeTask(orgId: string, id: string): Promise<void> {
   await json(
     `/api/tasks?orgId=${encodeURIComponent(orgId)}&id=${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
+}
+
+export async function fetchSources(orgId: string): Promise<SourceView[]> {
+  const { sources } = await json<{ sources: SourceView[] }>(
+    `/api/sources?orgId=${encodeURIComponent(orgId)}`,
+  );
+  return sources;
+}
+
+/** Saving always reconnects, so the answer says whether the source works. */
+export async function saveSource(
+  orgId: string,
+  input: Partial<SourceView> & { token?: string },
+): Promise<{ source: SourceView; probe: SourceProbe }> {
+  return json<{ source: SourceView; probe: SourceProbe }>(
+    `/api/sources?orgId=${encodeURIComponent(orgId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function removeSource(orgId: string, id: string): Promise<void> {
+  await json(
+    `/api/sources?orgId=${encodeURIComponent(orgId)}&id=${encodeURIComponent(id)}`,
     { method: "DELETE" },
   );
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { PendingTask } from "@/lib/task-types";
+import type { PendingTask, TaskAttachment } from "@/lib/task-types";
 
 const MARK: Record<PendingTask["state"], string> = {
   blocked: "border-ink/40",
@@ -15,7 +15,9 @@ const LABEL: Record<PendingTask["state"], string> = {
 
 interface TaskBoardProps {
   tasks: PendingTask[];
-  onAnswer: (id: string, text: string) => void;
+  onAnswer: (id: string, text: string, attachments: TaskAttachment[]) => void;
+  onAttach: (task: PendingTask, file: File) => Promise<TaskAttachment>;
+  onOpenFile: (fileId: string) => void;
   onResume: (task: PendingTask) => void;
   onRemove: (id: string) => void;
 }
@@ -23,20 +25,43 @@ interface TaskBoardProps {
 export default function TaskBoard({
   tasks,
   onAnswer,
+  onAttach,
+  onOpenFile,
   onResume,
   onRemove,
 }: TaskBoardProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [attached, setAttached] = useState<TaskAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
 
   const open = (task: PendingTask) => {
     setEditing(task.id);
     setDraft(task.answer);
+    setAttached(task.attachments);
+    setFailure(null);
   };
 
   const save = (id: string) => {
-    if (draft.trim()) onAnswer(id, draft.trim());
+    if (draft.trim() || attached.length) {
+      onAnswer(id, draft.trim(), attached);
+    }
     setEditing(null);
+  };
+
+  const pick = async (task: PendingTask, file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    setFailure(null);
+    try {
+      const meta = await onAttach(task, file);
+      setAttached((current) => [...current, meta]);
+    } catch (caught) {
+      setFailure(caught instanceof Error ? caught.message : "No pude subirlo.");
+    } finally {
+      setUploading(false);
+    }
   };
 
   if (tasks.length === 0) {
@@ -89,6 +114,21 @@ export default function TaskBoard({
             </p>
           ) : null}
 
+          {task.attachments.length > 0 && editing !== task.id ? (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {task.attachments.map((file) => (
+                <button
+                  key={file.id}
+                  type="button"
+                  onClick={() => onOpenFile(file.id)}
+                  className="max-w-full truncate rounded-md border border-hairline px-1.5 py-0.5 text-[11px] text-dim transition-colors hover:border-faint hover:text-ink"
+                >
+                  {file.title}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           {editing === task.id ? (
             <div className="mt-2">
               <textarea
@@ -99,7 +139,48 @@ export default function TaskBoard({
                 placeholder="Lo que te pidieron, o dónde encontrarlo."
                 className="w-full resize-none rounded-lg border border-hairline bg-panel px-2.5 py-2 text-[12px] leading-relaxed text-ink outline-none placeholder:text-faint focus:border-faint"
               />
+
+              {attached.length > 0 ? (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {attached.map((file) => (
+                    <span
+                      key={file.id}
+                      className="flex max-w-full items-center gap-1 rounded-md border border-hairline px-1.5 py-0.5 text-[11px] text-dim"
+                    >
+                      <span className="truncate">{file.title}</span>
+                      <button
+                        type="button"
+                        aria-label="Quitar adjunto"
+                        onClick={() =>
+                          setAttached((c) => c.filter((a) => a.id !== file.id))
+                        }
+                        className="text-faint transition-colors hover:text-red-700"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
+              {failure ? (
+                <p className="mt-1.5 text-[11px] text-red-700">{failure}</p>
+              ) : null}
+
               <div className="mt-1.5 flex gap-3 text-[12px]">
+                <label className="cursor-pointer text-faint transition-colors hover:text-ink">
+                  {uploading ? "Subiendo…" : "Adjuntar"}
+                  <input
+                    type="file"
+                    accept=".csv,.tsv,.txt,.md,.json,.yaml,.yml,.log,text/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      void pick(task, file);
+                    }}
+                  />
+                </label>
                 <button
                   type="button"
                   onClick={() => save(task.id)}

@@ -24,6 +24,8 @@ interface ThreadRailProps {
   onOpen: (thread: Thread) => void;
   onRemove: (id: string) => void;
   onLibrary: () => void;
+  onOrg: () => void;
+  orgOpen: boolean;
   onFiles: () => void;
   onTasks: () => void;
 }
@@ -40,6 +42,8 @@ export default function ThreadRail({
   onOpen,
   onRemove,
   onLibrary,
+  onOrg,
+  orgOpen,
   onFiles,
   onTasks,
 }: ThreadRailProps) {
@@ -126,6 +130,19 @@ export default function ThreadRail({
       </nav>
 
       <footer className="border-t border-hairline p-3">
+        {/* Between the rail appearing and the pane docking there is no other
+            way in, and the organigrama is the thing you came to see. */}
+        <button
+          type="button"
+          onClick={onOrg}
+          className={`flex w-full items-center rounded-lg px-3 py-2 text-[13px] transition-colors ${
+            orgOpen
+              ? "bg-raised text-ink"
+              : "text-dim hover:bg-raised/60 hover:text-ink"
+          }`}
+        >
+          Organigrama
+        </button>
         <button
           type="button"
           onClick={onTasks}

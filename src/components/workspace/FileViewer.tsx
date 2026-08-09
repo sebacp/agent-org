@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import Button from "@/components/ui/Button";
+import Markdown from "@/components/ui/Markdown";
 import { fetchFile } from "@/lib/api";
 import type { FileRecord } from "@/lib/file-types";
+
+/** Data you uploaded is not prose: Markdown would swallow its line breaks. */
+const RAW = /\.(csv|tsv|json|ya?ml|log)$/i;
 
 export default function FileViewer({
   orgId,
@@ -59,9 +63,24 @@ export default function FileViewer({
           {error ? (
             <p className="text-[13px] text-red-700">{error}</p>
           ) : file ? (
-            <p className="text-[14px] leading-relaxed whitespace-pre-wrap text-ink">
-              {file.content}
-            </p>
+            <>
+              {RAW.test(file.title) ? (
+                <pre className="overflow-x-auto text-[12px] leading-relaxed whitespace-pre text-ink">
+                  {file.content}
+                </pre>
+              ) : (
+                <Markdown className="text-[14px] text-ink">
+                  {file.content}
+                </Markdown>
+              )}
+              {file.content.length < file.chars ? (
+                <p className="mt-4 border-t border-hairline pt-3 text-[12px] text-faint">
+                  Mostrando los primeros{" "}
+                  {file.content.length.toLocaleString("es-AR")} caracteres de{" "}
+                  {file.chars.toLocaleString("es-AR")}.
+                </p>
+              ) : null}
+            </>
           ) : (
             <p className="text-[13px] text-faint">Abriendo…</p>
           )}

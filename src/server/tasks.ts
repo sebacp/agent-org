@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isSafeId, newId } from "@/lib/id";
-import type { PendingTask, TaskState } from "@/lib/task-types";
+import type { PendingTask, TaskAttachment, TaskState } from "@/lib/task-types";
 
 const ROOT = path.join(process.cwd(), ".data");
 
@@ -13,7 +13,12 @@ function tasksPath(orgId: string): string {
 export async function listTasks(orgId: string): Promise<PendingTask[]> {
   try {
     const parsed: unknown = JSON.parse(await readFile(tasksPath(orgId), "utf8"));
-    return Array.isArray(parsed) ? (parsed as PendingTask[]) : [];
+    if (!Array.isArray(parsed)) return [];
+    // Records written before attachments existed would otherwise read as null.
+    return (parsed as PendingTask[]).map((t) => ({
+      ...t,
+      attachments: t.attachments ?? [],
+    }));
   } catch {
     return [];
   }
@@ -40,6 +45,7 @@ export async function createTask(
     title: input.title.trim().slice(0, 160) || "Sin título",
     need: input.need.trim().slice(0, 2000),
     answer: "",
+    attachments: [],
     agentId: input.agentId,
     author: input.author,
     area: input.area,
@@ -54,19 +60,23 @@ export async function createTask(
 export async function updateTask(
   orgId: string,
   id: string,
-  patch: { answer?: string; state?: TaskState },
+  patch: { answer?: string; attachments?: TaskAttachment[]; state?: TaskState },
 ): Promise<PendingTask | null> {
   const tasks = await listTasks(orgId);
   const found = tasks.find((t) => t.id === id);
   if (!found) return null;
 
-  // Answering is what turns a task the company can't advance into one it can.
+  // Answering is what turns a task the company can't advance into one it can,
+  // and a handed-over file counts as an answer even with nothing written.
   const answered =
     patch.answer !== undefined ? patch.answer.slice(0, 4000) : found.answer;
+  const attachments = patch.attachments ?? found.attachments;
+  const replied = Boolean(answered.trim() || attachments.length);
   const updated: PendingTask = {
     ...found,
     answer: answered,
-    state: patch.state ?? (answered.trim() ? "open" : found.state),
+    attachments,
+    state: patch.state ?? (replied ? "open" : found.state),
     updatedAt: new Date().toISOString(),
   };
 

@@ -6,12 +6,21 @@ import {
   type OnNodesChange,
 } from "@xyflow/react";
 import OrgCanvas from "@/components/canvas/OrgCanvas";
+import Markdown from "@/components/ui/Markdown";
+import SourceBoard from "@/components/workspace/SourceBoard";
 import TaskBoard from "@/components/workspace/TaskBoard";
 import type { FileMeta } from "@/lib/file-types";
-import type { PendingTask } from "@/lib/task-types";
+import type { SourceProbe, SourceView } from "@/lib/source-types";
+import type { PendingTask, TaskAttachment } from "@/lib/task-types";
 import type { AgentNode, OrgEdge } from "@/lib/types";
+import {
+  formatCost,
+  formatTokens,
+  totalTokens,
+  type RunUsage,
+} from "@/lib/usage";
 
-export type ContextTab = "org" | "tasks" | "files";
+export type ContextTab = "org" | "tasks" | "files" | "sources";
 
 const WHEN = new Intl.DateTimeFormat("es-AR", {
   day: "numeric",
@@ -39,15 +48,24 @@ interface ContextPaneProps {
   onEdgesChange: OnEdgesChange<OrgEdge>;
   onConnect: OnConnect;
   results: Record<string, string>;
+  /** What each agent burned in the run on screen, keyed by agent id. */
+  spend: Record<string, RunUsage>;
   files: FileMeta[];
   query: string;
   onQuery: (value: string) => void;
   onOpenFile: (id: string) => void;
   onRemoveFile: (id: string) => void;
   tasks: PendingTask[];
-  onAnswerTask: (id: string, text: string) => void;
+  onAnswerTask: (id: string, text: string, files: TaskAttachment[]) => void;
+  onAttachToTask: (task: PendingTask, file: File) => Promise<TaskAttachment>;
   onResumeTask: (task: PendingTask) => void;
   onRemoveTask: (id: string) => void;
+  sources: SourceView[];
+  probes: Record<string, SourceProbe>;
+  onSaveSource: (
+    input: Partial<SourceView> & { token?: string },
+  ) => Promise<SourceProbe>;
+  onRemoveSource: (id: string) => void;
   onEdit: () => void;
 }
 
@@ -63,6 +81,7 @@ export default function ContextPane({
   onEdgesChange,
   onConnect,
   results,
+  spend,
   files,
   query,
   onQuery,
@@ -70,8 +89,13 @@ export default function ContextPane({
   onRemoveFile,
   tasks,
   onAnswerTask,
+  onAttachToTask,
   onResumeTask,
   onRemoveTask,
+  sources,
+  probes,
+  onSaveSource,
+  onRemoveSource,
   onEdit,
 }: ContextPaneProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -79,15 +103,16 @@ export default function ContextPane({
   const pending = tasks.filter((t) => t.state !== "done").length;
   const { fitView } = useReactFlow();
 
-  // The canvas is unmounted while the files tab is up, and dragging the pane
-  // narrower would otherwise leave the org clipped, so it refits on both.
+  // The canvas is unmounted while the files tab is up, dragging the pane
+  // narrower would leave the org clipped, and as a drawer it measures zero
+  // until it opens, so it refits on all three.
   useEffect(() => {
     if (tab !== "org") return;
     const frame = window.requestAnimationFrame(() => {
       void fitView({ padding: 0.08 });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [fitView, tab, width]);
+  }, [fitView, open, tab, width]);
 
   return (
     <>
@@ -109,18 +134,22 @@ export default function ContextPane({
         } h-full shrink-0 flex-col border-l border-hairline bg-chrome lg:static lg:flex lg:w-[var(--pane)] lg:max-w-none`}
       >
         <header className="flex items-center gap-1 border-b border-hairline px-3 py-2.5">
+        {/* Four tabs stop fitting one row once the pane is dragged narrow, and
+            a clipped tab is a tab nobody finds. */}
+        <div className="flex min-w-0 flex-1 flex-wrap gap-1">
         {(
           [
             ["org", "Organigrama"],
             ["tasks", `Pendientes${pending ? ` · ${pending}` : ""}`],
             ["files", `Archivos${files.length ? ` · ${files.length}` : ""}`],
+            ["sources", `Fuentes${sources.length ? ` · ${sources.length}` : ""}`],
           ] as const
         ).map(([id, label]) => (
           <button
             key={id}
             type="button"
             onClick={() => onTab(id)}
-            className={`rounded-lg px-3 py-1.5 text-[13px] transition-colors ${
+            className={`shrink-0 rounded-lg px-3 py-1.5 text-[13px] transition-colors ${
               tab === id
                 ? "bg-raised text-ink"
                 : "text-dim hover:bg-raised/60 hover:text-ink"
@@ -129,10 +158,11 @@ export default function ContextPane({
             {label}
           </button>
         ))}
+        </div>
         <button
           type="button"
           onClick={onEdit}
-          className="ml-auto text-[12px] text-faint transition-colors hover:text-ink"
+          className="text-[12px] text-faint transition-colors hover:text-ink"
         >
           Editar
         </button>
@@ -168,11 +198,23 @@ export default function ContextPane({
                 {selected.data.role || "Sin rol"}
                 {selected.data.name ? ` · ${selected.data.name}` : ""}
               </p>
-              <p className="mt-1.5 text-[12px] leading-relaxed whitespace-pre-line text-dim">
-                {results[selected.id] ??
-                  selected.data.instructions ??
-                  "Sin instrucciones."}
-              </p>
+              {spend[selected.id] ? (
+                <p className="mt-1 text-[11px] text-faint">
+                  {formatTokens(totalTokens(spend[selected.id]))} tokens ·{" "}
+                  {formatCost(spend[selected.id].cost)}
+                </p>
+              ) : null}
+              {/* An answer comes back in markdown; instructions are typed by
+                  hand and keep the line breaks their author put there. */}
+              {results[selected.id] ? (
+                <Markdown className="mt-1.5 text-[12px] text-dim">
+                  {results[selected.id]}
+                </Markdown>
+              ) : (
+                <p className="mt-1.5 text-[12px] leading-relaxed whitespace-pre-line text-dim">
+                  {selected.data.instructions || "Sin instrucciones."}
+                </p>
+              )}
             </div>
           ) : null}
         </>
@@ -181,8 +223,19 @@ export default function ContextPane({
           <TaskBoard
             tasks={tasks}
             onAnswer={onAnswerTask}
+            onAttach={onAttachToTask}
+            onOpenFile={onOpenFile}
             onResume={onResumeTask}
             onRemove={onRemoveTask}
+          />
+        </div>
+      ) : tab === "sources" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <SourceBoard
+            sources={sources}
+            probes={probes}
+            onSave={onSaveSource}
+            onRemove={onRemoveSource}
           />
         </div>
       ) : (

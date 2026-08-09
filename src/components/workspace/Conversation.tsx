@@ -1,11 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import Button from "@/components/ui/Button";
+import Markdown from "@/components/ui/Markdown";
 import type { ThreadStep } from "@/lib/run-types";
+import {
+  formatCost,
+  formatTokens,
+  totalTokens,
+  type RunUsage,
+} from "@/lib/usage";
 
 interface ConversationProps {
   companyName: string;
   task: string | null;
   trace: ThreadStep[];
+  usage: RunUsage;
   answer: string | null;
   error: string | null;
   running: boolean;
@@ -32,22 +40,34 @@ function TraceLine({ step }: { step: ThreadStep }) {
           </span>
         </button>
         {open ? (
-          <p className="border-t border-hairline px-3 py-2.5 text-[12px] leading-relaxed whitespace-pre-line text-dim">
+          <Markdown className="border-t border-hairline px-3 py-2.5 text-[12px] text-dim">
             {step.text}
-          </p>
+          </Markdown>
         ) : null}
       </div>
     );
   }
 
+  const failed = step.kind === "failed";
+
   return (
-    <p className="flex gap-2 px-1 text-[12px] leading-relaxed text-faint">
-      <span className="shrink-0 text-dim">
-        {step.kind === "delegate" ? "→" : "·"}
+    <p
+      className={`flex gap-2 px-1 text-[12px] leading-relaxed ${
+        failed ? "text-red-700" : "text-faint"
+      }`}
+    >
+      <span className={`shrink-0 ${failed ? "text-red-700" : "text-dim"}`}>
+        {step.kind === "delegate" ? "→" : failed ? "!" : "·"}
       </span>
       <span className="min-w-0">
-        <span className="text-dim">{step.role || "Agente"}</span>{" "}
-        {step.kind === "delegate" ? "le pasó a " : ""}
+        <span className={failed ? "" : "text-dim"}>
+          {step.role || "Agente"}
+        </span>{" "}
+        {step.kind === "delegate"
+          ? "le pasó a "
+          : failed
+            ? "no pudo terminar · "
+            : ""}
         {step.text}
       </span>
     </p>
@@ -58,6 +78,7 @@ export default function Conversation({
   companyName,
   task,
   trace,
+  usage,
   answer,
   error,
   running,
@@ -66,6 +87,9 @@ export default function Conversation({
 }: ConversationProps) {
   const [draft, setDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
+  const tokens = totalTokens(usage);
+  const prompt = usage.cached + usage.input;
+  const cacheHit = prompt > 0 ? Math.round((usage.cached / prompt) * 100) : 0;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -123,10 +147,17 @@ export default function Conversation({
                   <p className="text-[11px] tracking-wide text-faint uppercase">
                     {companyName || "La empresa"}
                   </p>
-                  <p className="mt-2 text-[14px] leading-relaxed whitespace-pre-line text-ink">
+                  <Markdown className="mt-2 text-[14px] text-ink">
                     {answer}
-                  </p>
+                  </Markdown>
                 </div>
+              ) : null}
+
+              {tokens > 0 ? (
+                <p className="mt-3 px-1 text-[11px] text-faint">
+                  {formatTokens(tokens)} tokens · {formatCost(usage.cost)}
+                  {cacheHit > 0 ? ` · ${cacheHit}% desde caché` : ""}
+                </p>
               ) : null}
             </>
           )}

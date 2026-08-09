@@ -11,11 +11,14 @@ import type {
   DepartmentDef,
   OrgEdge,
 } from "@/lib/types";
+import { addUsage, NO_USAGE, type RunUsage } from "@/lib/usage";
 
 interface Setters {
   statuses: (fn: (s: Record<string, AgentStatus>) => Record<string, AgentStatus>) => void;
   results: (fn: (r: Record<string, string>) => Record<string, string>) => void;
   trace: (fn: (t: ThreadStep[]) => ThreadStep[]) => void;
+  spend: (fn: (s: Record<string, RunUsage>) => Record<string, RunUsage>) => void;
+  total: (fn: (u: RunUsage) => RunUsage) => void;
   answer: (text: string) => void;
   error: (message: string) => void;
 }
@@ -54,6 +57,27 @@ function applyEvent(
         },
       ]);
       break;
+    case "usage": {
+      const spent: RunUsage = { ...event.usage, cost: event.cost };
+      set.spend((s) => ({
+        ...s,
+        [event.agentId]: addUsage(s[event.agentId] ?? NO_USAGE, spent),
+      }));
+      set.total((u) => addUsage(u, spent));
+      break;
+    }
+    case "failed":
+      set.statuses((s) => ({ ...s, [event.agentId]: "error" }));
+      set.trace((t) => [
+        ...t,
+        {
+          agentId: event.agentId,
+          role: role(event.agentId),
+          kind: "failed",
+          text: event.message,
+        },
+      ]);
+      break;
     case "result":
       set.results((r) => ({ ...r, [event.agentId]: event.text }));
       // The root's result *is* the final answer, shown on its own below.
@@ -89,6 +113,8 @@ export function useOrgRun(
   const [statuses, setStatuses] = useState<Record<string, AgentStatus>>({});
   const [results, setResults] = useState<Record<string, string>>({});
   const [trace, setTrace] = useState<ThreadStep[]>([]);
+  const [spend, setSpend] = useState<Record<string, RunUsage>>({});
+  const [usage, setUsage] = useState<RunUsage>(NO_USAGE);
   const [task, setTask] = useState<string | null>(null);
   const [answer, setAnswer] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +131,8 @@ export function useOrgRun(
     setStatuses({});
     setResults({});
     setTrace([]);
+    setSpend({});
+    setUsage(NO_USAGE);
     setTask(null);
     setAnswer(null);
     setError(null);
@@ -134,6 +162,8 @@ export function useOrgRun(
       setStatuses({});
       setResults({});
       setTrace([]);
+      setSpend({});
+      setUsage(NO_USAGE);
       setTask(prompt);
       setAnswer(null);
       setError(null);
@@ -175,6 +205,8 @@ export function useOrgRun(
               statuses: setStatuses,
               results: setResults,
               trace: setTrace,
+              spend: setSpend,
+              total: setUsage,
               answer: setAnswer,
               error: setError,
             });
@@ -193,11 +225,19 @@ export function useOrgRun(
   );
 
   const show = useCallback(
-    (thread: { task: string; answer: string; steps: ThreadStep[] }) => {
+    (thread: {
+      task: string;
+      answer: string;
+      steps: ThreadStep[];
+      usage?: RunUsage;
+    }) => {
       stop();
       setStatuses({});
       setResults({});
       setTrace(thread.steps);
+      // A replayed thread only kept its total; the per-agent split is gone.
+      setSpend({});
+      setUsage(thread.usage ?? NO_USAGE);
       setTask(thread.task);
       setAnswer(thread.answer);
       setError(null);
@@ -210,6 +250,8 @@ export function useOrgRun(
     statuses,
     results,
     trace,
+    spend,
+    usage,
     task,
     answer,
     error,

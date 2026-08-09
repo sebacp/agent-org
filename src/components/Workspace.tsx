@@ -8,6 +8,7 @@ import { useAutosave } from "@/hooks/useAutosave";
 import { useFiles } from "@/hooks/useFiles";
 import { useOrgGraph } from "@/hooks/useOrgGraph";
 import { useOrgRun } from "@/hooks/useOrgRun";
+import { useSources } from "@/hooks/useSources";
 import { useTasks } from "@/hooks/useTasks";
 import { useThreads } from "@/hooks/useThreads";
 import { DepartmentsProvider } from "@/lib/department-context";
@@ -23,6 +24,7 @@ export default function Workspace({ orgId }: { orgId: string }) {
   const threads = useThreads(orgId);
   const files = useFiles(orgId);
   const tasks = useTasks(orgId);
+  const sources = useSources(orgId);
 
   const [tab, setTab] = useState<ContextTab>("org");
   const [paneOpen, setPaneOpen] = useState(false);
@@ -41,11 +43,32 @@ export default function Workspace({ orgId }: { orgId: string }) {
     [files, run, tasks, threads],
   );
 
+  const attachToTask = useCallback(
+    async (task: PendingTask, file: File) => {
+      const meta = await tasks.attach(task, file);
+      await files.refresh();
+      return meta;
+    },
+    [files, tasks],
+  );
+
   const resumeTask = useCallback(
     (task: PendingTask) => {
       setTab("tasks");
       void start(
-        `Retomá el pendiente ${task.id}: ${task.title}\n\nFaltaba esto:\n${task.need}\n\nYa lo tenés:\n${task.answer}\n\nHacé el trabajo con eso y cerrá el pendiente.`,
+        [
+          `Retomá el pendiente ${task.id}: ${task.title}`,
+          `Faltaba esto:\n${task.need}`,
+          task.answer ? `Ya lo tenés:\n${task.answer}` : null,
+          task.attachments.length
+            ? `Te dejaron estos archivos en la biblioteca, leelos con leer_archivo:\n${task.attachments
+                .map((f) => `- ${f.title} (id ${f.id})`)
+                .join("\n")}`
+            : null,
+          "Hacé el trabajo con eso y cerrá el pendiente.",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
         task.agentId,
       );
     },
@@ -125,6 +148,11 @@ export default function Workspace({ orgId }: { orgId: string }) {
               onOpen={openThread}
               onRemove={threads.remove}
               onLibrary={() => void router.push("/")}
+              orgOpen={tab === "org"}
+              onOrg={() => {
+                setTab("org");
+                setPaneOpen(true);
+              }}
               onFiles={() => {
                 setTab("files");
                 setPaneOpen(true);
@@ -139,6 +167,7 @@ export default function Workspace({ orgId }: { orgId: string }) {
               companyName={org.company.name}
               task={run.task}
               trace={run.trace}
+              usage={run.usage}
               answer={run.answer}
               error={run.error}
               running={run.running}
@@ -165,15 +194,23 @@ export default function Workspace({ orgId }: { orgId: string }) {
               onEdgesChange={org.onEdgesChange}
               onConnect={org.onConnect}
               results={run.results}
+              spend={run.spend}
               files={files.files}
               query={files.query}
               onQuery={files.setQuery}
               onOpenFile={setOpenFileId}
               onRemoveFile={(id) => void files.remove(id)}
               tasks={tasks.tasks}
-              onAnswerTask={(id, text) => void tasks.answer(id, text)}
+              onAnswerTask={(id, text, attachments) =>
+                void tasks.answer(id, text, attachments)
+              }
+              onAttachToTask={attachToTask}
               onResumeTask={resumeTask}
               onRemoveTask={(id) => void tasks.remove(id)}
+              sources={sources.sources}
+              probes={sources.probes}
+              onSaveSource={sources.save}
+              onRemoveSource={(id) => void sources.remove(id)}
               onEdit={() => void router.push(`/org/${orgId}/editar`)}
             />
           </div>

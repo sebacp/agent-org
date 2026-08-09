@@ -1,4 +1,6 @@
+import type { SourceDef } from "@/lib/source-types";
 import { getFile, listFiles, saveFile } from "@/server/files";
+import { callSourceTool, listSourceTools, parseToolName } from "@/server/mcp";
 import { createTask, listTasks, updateTask } from "@/server/tasks";
 
 export interface ToolSchema {
@@ -136,6 +138,29 @@ export const TOOLS: ToolSchema[] = [
   },
 ];
 
+/**
+ * The built-in seven plus whatever the areas' data sources expose. A source
+ * that won't answer is left out rather than failing the run, since the agent
+ * can still work from the library.
+ */
+export async function toolsFor(
+  orgId: string,
+  sources: SourceDef[],
+): Promise<ToolSchema[]> {
+  const remote = await Promise.all(
+    sources.map((source) =>
+      listSourceTools(orgId, source).catch((error: unknown) => {
+        console.error(`Fuente ${source.id} no respondió:`, error);
+        return [];
+      }),
+    ),
+  );
+  return [...TOOLS, ...remote.flat()];
+}
+
+/** A whole export would not fit in the model's context, so a read gets the head. */
+const MAX_READ_CHARS = 80_000;
+
 const STATE_LABEL: Record<string, string> = {
   blocked: "esperando respuesta",
   open: "listo para retomar",
@@ -170,6 +195,7 @@ export async function runTool(
   name: string,
   rawArgs: string,
   agent: { id: string; role: string; department: string },
+  sources: SourceDef[] = [],
 ): Promise<ToolOutcome> {
   let args: Record<string, unknown> = {};
   try {
@@ -182,6 +208,31 @@ export async function runTool(
       summary: "argumentos ilegibles",
       content: "No pude leer los argumentos. Mandá JSON válido.",
     };
+  }
+
+  const remote = parseToolName(name);
+  if (remote) {
+    const source = sources.find((s) => s.id === remote.sourceId);
+    if (!source) {
+      return {
+        summary: `pidió una fuente que no tiene (${remote.sourceId})`,
+        content: "Esa fuente no está conectada a tu área.",
+      };
+    }
+    const label = source.label || "la fuente";
+    try {
+      return {
+        summary: `consultó ${label} · ${remote.tool}`,
+        content: await callSourceTool(orgId, source, remote.tool, args),
+      };
+    } catch (error) {
+      return {
+        summary: `${label} falló · ${remote.tool}`,
+        content: `La fuente no respondió: ${
+          error instanceof Error ? error.message : "error desconocido"
+        }. Seguí con lo que tengas o dejá un pendiente.`,
+      };
+    }
   }
 
   switch (name) {
@@ -218,9 +269,19 @@ export async function runTool(
           content: "No existe ningún archivo con ese id.",
         };
       }
+      if (file.content.length <= MAX_READ_CHARS) {
+        return {
+          summary: `leyó "${file.title}"`,
+          content: `# ${file.title}\n\n${file.content}`,
+        };
+      }
       return {
-        summary: `leyó "${file.title}"`,
-        content: `# ${file.title}\n\n${file.content}`,
+        summary: `leyó "${file.title}" · parcial`,
+        content: [
+          `# ${file.title}`,
+          file.content.slice(0, MAX_READ_CHARS),
+          `[Corté acá. El archivo tiene ${file.content.length} caracteres en total; esto es el principio. Sacá lo que puedas de esta parte y decí que la viste incompleta.]`,
+        ].join("\n\n"),
       };
     }
 
