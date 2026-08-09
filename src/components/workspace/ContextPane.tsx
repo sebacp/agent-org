@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   useReactFlow,
   type OnConnect,
@@ -6,11 +6,10 @@ import {
   type OnNodesChange,
 } from "@xyflow/react";
 import OrgCanvas from "@/components/canvas/OrgCanvas";
+import Avatar from "@/components/ui/Avatar";
 import Markdown from "@/components/ui/Markdown";
-import SourceBoard from "@/components/workspace/SourceBoard";
 import TaskBoard from "@/components/workspace/TaskBoard";
 import type { FileMeta } from "@/lib/file-types";
-import type { SourceProbe, SourceView } from "@/lib/source-types";
 import type { PendingTask, TaskAttachment } from "@/lib/task-types";
 import type { AgentNode, OrgEdge } from "@/lib/types";
 import {
@@ -20,7 +19,13 @@ import {
   type RunUsage,
 } from "@/lib/usage";
 
-export type ContextTab = "org" | "tasks" | "files" | "sources";
+export type ContextTab = "org" | "tasks" | "files";
+
+const TABS = [
+  ["org", "Organigrama"],
+  ["tasks", "Pendientes"],
+  ["files", "Biblioteca"],
+] as const;
 
 const WHEN = new Intl.DateTimeFormat("es-AR", {
   day: "numeric",
@@ -40,8 +45,6 @@ interface ContextPaneProps {
   /** Only meaningful below `lg`, where the pane becomes a drawer. */
   open: boolean;
   onClose: () => void;
-  /** Dragged width, applied only where the pane sits beside the conversation. */
-  width: number;
   nodes: AgentNode[];
   edges: OrgEdge[];
   onNodesChange: OnNodesChange<AgentNode>;
@@ -60,12 +63,6 @@ interface ContextPaneProps {
   onAttachToTask: (task: PendingTask, file: File) => Promise<TaskAttachment>;
   onResumeTask: (task: PendingTask) => void;
   onRemoveTask: (id: string) => void;
-  sources: SourceView[];
-  probes: Record<string, SourceProbe>;
-  onSaveSource: (
-    input: Partial<SourceView> & { token?: string },
-  ) => Promise<SourceProbe>;
-  onRemoveSource: (id: string) => void;
   onEdit: () => void;
 }
 
@@ -74,7 +71,6 @@ export default function ContextPane({
   onTab,
   open,
   onClose,
-  width,
   nodes,
   edges,
   onNodesChange,
@@ -92,27 +88,27 @@ export default function ContextPane({
   onAttachToTask,
   onResumeTask,
   onRemoveTask,
-  sources,
-  probes,
-  onSaveSource,
-  onRemoveSource,
   onEdit,
 }: ContextPaneProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
-  const pending = tasks.filter((t) => t.state !== "done").length;
+  const blocked = tasks.filter((t) => t.state === "blocked").length;
   const { fitView } = useReactFlow();
+  const canvasRef = useRef<HTMLDivElement>(null);
 
-  // The canvas is unmounted while the files tab is up, dragging the pane
-  // narrower would leave the org clipped, and as a drawer it measures zero
-  // until it opens, so it refits on all three.
+  // The pane keeps whatever the conversation leaves it, so its width moves with
+  // the divider and with the window itself, and as a drawer it measures zero
+  // until it opens. Watching the element covers all of that; React never sees
+  // most of it.
   useEffect(() => {
-    if (tab !== "org") return;
-    const frame = window.requestAnimationFrame(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const observer = new ResizeObserver(() => {
       void fitView({ padding: 0.08 });
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [fitView, open, tab, width]);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [fitView, tab]);
 
   return (
     <>
@@ -126,167 +122,159 @@ export default function ContextPane({
       ) : null}
 
       <aside
-        style={{ "--pane": `${width}px` } as CSSProperties}
         className={`${
           open
             ? "fixed inset-y-0 right-0 z-40 flex w-[360px] max-w-[85vw]"
             : "hidden"
-        } h-full shrink-0 flex-col border-l border-hairline bg-chrome lg:static lg:flex lg:w-[var(--pane)] lg:max-w-none`}
+        } h-full shrink-0 flex-col border-l border-hairline bg-chrome lg:static lg:flex lg:w-auto lg:max-w-none lg:min-w-0 lg:flex-1 lg:border-l-0`}
       >
         <header className="flex items-center gap-1 border-b border-hairline px-3 py-2.5">
-        {/* Four tabs stop fitting one row once the pane is dragged narrow, and
-            a clipped tab is a tab nobody finds. */}
-        <div className="flex min-w-0 flex-1 flex-wrap gap-1">
-        {(
-          [
-            ["org", "Organigrama"],
-            ["tasks", `Pendientes${pending ? ` · ${pending}` : ""}`],
-            ["files", `Archivos${files.length ? ` · ${files.length}` : ""}`],
-            ["sources", `Fuentes${sources.length ? ` · ${sources.length}` : ""}`],
-          ] as const
-        ).map(([id, label]) => (
+          {/* The rail is the one place these live; this row only stands in for it
+            on the widths that hide the rail. It wraps because tabs stop fitting
+            one row once the pane is dragged narrow. */}
+          <div className="flex min-w-0 flex-1 flex-wrap gap-1 md:hidden">
+            {TABS.map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onTab(id)}
+                className={`shrink-0 rounded-lg px-3 py-1.5 text-[13px] transition-colors ${
+                  tab === id
+                    ? "bg-raised text-ink"
+                    : "text-dim hover:bg-raised/60 hover:text-ink"
+                }`}
+              >
+                {label}
+                {id === "tasks" && blocked ? ` · ${blocked}` : ""}
+                {id === "files" && files.length ? ` · ${files.length}` : ""}
+              </button>
+            ))}
+          </div>
+          <p className="hidden min-w-0 flex-1 truncate px-1 text-[13px] font-medium text-ink md:block">
+            {TABS.find(([id]) => id === tab)?.[1]}
+          </p>
           <button
-            key={id}
             type="button"
-            onClick={() => onTab(id)}
-            className={`shrink-0 rounded-lg px-3 py-1.5 text-[13px] transition-colors ${
-              tab === id
-                ? "bg-raised text-ink"
-                : "text-dim hover:bg-raised/60 hover:text-ink"
-            }`}
+            onClick={onEdit}
+            className="text-[12px] text-faint transition-colors hover:text-ink"
           >
-            {label}
+            Editar
           </button>
-        ))}
-        </div>
-        <button
-          type="button"
-          onClick={onEdit}
-          className="text-[12px] text-faint transition-colors hover:text-ink"
-        >
-          Editar
-        </button>
-        <button
-          type="button"
-          aria-label="Cerrar"
-          onClick={onClose}
-          className="pl-2 text-[15px] text-faint transition-colors hover:text-ink lg:hidden"
-        >
-          ×
-        </button>
-      </header>
+          <button
+            type="button"
+            aria-label="Cerrar"
+            onClick={onClose}
+            className="pl-2 text-[15px] text-faint transition-colors hover:text-ink lg:hidden"
+          >
+            ×
+          </button>
+        </header>
 
-      {tab === "org" ? (
-        <>
-          <div className="min-h-0 flex-1">
-            <OrgCanvas
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onNodeClick={(id) =>
-                setSelectedId((current) => (current === id ? null : id))
-              }
-              compact
+        {tab === "org" ? (
+          <>
+            <div ref={canvasRef} className="min-h-0 flex-1">
+              <OrgCanvas
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                onNodeClick={(id) =>
+                  setSelectedId((current) => (current === id ? null : id))
+                }
+                compact
+              />
+            </div>
+
+            {selected ? (
+              <div className="max-h-[45%] overflow-y-auto border-t border-hairline px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Avatar seed={selected.id} size={24} />
+                  <p className="min-w-0 flex-1 text-[13px] font-medium text-ink">
+                    {selected.data.role || "Sin rol"}
+                    {selected.data.name ? ` · ${selected.data.name}` : ""}
+                  </p>
+                </div>
+                {spend[selected.id] ? (
+                  <p className="mt-1 text-[11px] text-faint">
+                    {formatTokens(totalTokens(spend[selected.id]))} tokens ·{" "}
+                    {formatCost(spend[selected.id].cost)}
+                  </p>
+                ) : null}
+                {/* An answer comes back in markdown; instructions are typed by
+                  hand and keep the line breaks their author put there. */}
+                {results[selected.id] ? (
+                  <Markdown className="mt-1.5 text-[12px] text-dim">
+                    {results[selected.id]}
+                  </Markdown>
+                ) : (
+                  <p className="mt-1.5 text-[12px] leading-relaxed whitespace-pre-line text-dim">
+                    {selected.data.instructions || "Sin instrucciones."}
+                  </p>
+                )}
+              </div>
+            ) : null}
+          </>
+        ) : tab === "tasks" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <TaskBoard
+              tasks={tasks}
+              onAnswer={onAnswerTask}
+              onAttach={onAttachToTask}
+              onOpenFile={onOpenFile}
+              onResume={onResumeTask}
+              onRemove={onRemoveTask}
             />
           </div>
+        ) : (
+          <>
+            <div className="border-b border-hairline px-3 py-2.5">
+              <input
+                value={query}
+                onChange={(e) => onQuery(e.target.value)}
+                placeholder="Buscar en la biblioteca"
+                className="w-full rounded-lg border border-hairline bg-panel px-3 py-2 text-[13px] text-ink outline-none placeholder:text-faint focus:border-faint"
+              />
+            </div>
 
-          {selected ? (
-            <div className="max-h-[45%] overflow-y-auto border-t border-hairline px-4 py-3">
-              <p className="text-[13px] font-medium text-ink">
-                {selected.data.role || "Sin rol"}
-                {selected.data.name ? ` · ${selected.data.name}` : ""}
-              </p>
-              {spend[selected.id] ? (
-                <p className="mt-1 text-[11px] text-faint">
-                  {formatTokens(totalTokens(spend[selected.id]))} tokens ·{" "}
-                  {formatCost(spend[selected.id].cost)}
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              {files.map((file) => (
+                <div key={file.id} className="group relative">
+                  <button
+                    type="button"
+                    onClick={() => onOpenFile(file.id)}
+                    className="w-full rounded-lg px-3 py-2.5 pr-7 text-left transition-colors hover:bg-raised/60"
+                  >
+                    <span className="block truncate text-[13px] text-ink">
+                      {file.title}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] text-faint">
+                      {[file.author, file.area, whenLabel(file.createdAt)]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Borrar archivo"
+                    onClick={() => onRemoveFile(file.id)}
+                    className="absolute top-2.5 right-2 text-[13px] text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-700 focus:opacity-100"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+
+              {files.length === 0 ? (
+                <p className="px-3 py-8 text-[12px] leading-relaxed text-faint">
+                  {query
+                    ? "Nada con esa búsqueda."
+                    : "Vacía por ahora. Los agentes guardan acá lo que vale la pena conservar."}
                 </p>
               ) : null}
-              {/* An answer comes back in markdown; instructions are typed by
-                  hand and keep the line breaks their author put there. */}
-              {results[selected.id] ? (
-                <Markdown className="mt-1.5 text-[12px] text-dim">
-                  {results[selected.id]}
-                </Markdown>
-              ) : (
-                <p className="mt-1.5 text-[12px] leading-relaxed whitespace-pre-line text-dim">
-                  {selected.data.instructions || "Sin instrucciones."}
-                </p>
-              )}
             </div>
-          ) : null}
-        </>
-      ) : tab === "tasks" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <TaskBoard
-            tasks={tasks}
-            onAnswer={onAnswerTask}
-            onAttach={onAttachToTask}
-            onOpenFile={onOpenFile}
-            onResume={onResumeTask}
-            onRemove={onRemoveTask}
-          />
-        </div>
-      ) : tab === "sources" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <SourceBoard
-            sources={sources}
-            probes={probes}
-            onSave={onSaveSource}
-            onRemove={onRemoveSource}
-          />
-        </div>
-      ) : (
-        <>
-          <div className="border-b border-hairline px-3 py-2.5">
-            <input
-              value={query}
-              onChange={(e) => onQuery(e.target.value)}
-              placeholder="Buscar en la biblioteca"
-              className="w-full rounded-lg border border-hairline bg-panel px-3 py-2 text-[13px] text-ink outline-none placeholder:text-faint focus:border-faint"
-            />
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            {files.map((file) => (
-              <div key={file.id} className="group relative">
-                <button
-                  type="button"
-                  onClick={() => onOpenFile(file.id)}
-                  className="w-full rounded-lg px-3 py-2.5 pr-7 text-left transition-colors hover:bg-raised/60"
-                >
-                  <span className="block truncate text-[13px] text-ink">
-                    {file.title}
-                  </span>
-                  <span className="mt-0.5 block truncate text-[11px] text-faint">
-                    {[file.author, file.area, whenLabel(file.createdAt)]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  aria-label="Borrar archivo"
-                  onClick={() => onRemoveFile(file.id)}
-                  className="absolute top-2.5 right-2 text-[13px] text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-700 focus:opacity-100"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-
-            {files.length === 0 ? (
-              <p className="px-3 py-8 text-[12px] leading-relaxed text-faint">
-                {query
-                  ? "Nada con esa búsqueda."
-                  : "Vacía por ahora. Los agentes guardan acá lo que vale la pena conservar."}
-              </p>
-            ) : null}
-          </div>
-        </>
-      )}
+          </>
+        )}
       </aside>
     </>
   );

@@ -26,7 +26,15 @@ function agent(id: string, role: string): AgentNode {
     id,
     type: "agent",
     position: { x: 0, y: 0 },
-    data: { role, name, department, model, instructions },
+    data: {
+      role,
+      name,
+      department,
+      model,
+      instructions,
+      sources: [],
+      library: ["write"],
+    },
   };
 }
 

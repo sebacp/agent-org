@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isSafeId, newId } from "@/lib/id";
 import type { PendingTask, TaskAttachment, TaskState } from "@/lib/task-types";
+import { publish } from "@/server/bus";
 
 const ROOT = path.join(process.cwd(), ".data");
 
@@ -27,6 +28,7 @@ export async function listTasks(orgId: string): Promise<PendingTask[]> {
 async function write(orgId: string, tasks: PendingTask[]): Promise<void> {
   await mkdir(path.dirname(tasksPath(orgId)), { recursive: true });
   await writeFile(tasksPath(orgId), JSON.stringify(tasks, null, 2), "utf8");
+  publish(orgId, "tasks");
 }
 
 export async function createTask(

@@ -24,12 +24,13 @@ import type {
   OrgEdge,
 } from "@/lib/types";
 
-export type Step = 1 | 2 | 3 | 4;
+export type Step = 1 | 2 | 3 | 4 | 5;
 export const STEPS = [
   { id: 1, label: "Empresa" },
   { id: 2, label: "Áreas" },
   { id: 3, label: "Equipo" },
-  { id: 4, label: "Organigrama" },
+  { id: 4, label: "Fuentes" },
+  { id: 5, label: "Organigrama" },
 ] as const;
 
 /**
@@ -72,7 +73,7 @@ export function useOrgGraph(orgId: string) {
   );
   const [edges, setEdges, onEdgesChange] = useEdgesState<OrgEdge>(initial.edges);
   const [step, setStep] = useState<Step>(
-    () => readStep(orgId, initial.company.name ? 4 : 1) as Step,
+    () => readStep(orgId, initial.company.name ? 5 : 1) as Step,
   );
   const [openAgentId, setOpenAgentId] = useState<string | null>(null);
   const { fitView } = useReactFlow<AgentNode, OrgEdge>();
@@ -156,6 +157,8 @@ export function useOrgGraph(orgId: string) {
           department,
           model: preset.model,
           instructions: preset.instructions,
+          sources: [],
+          library: ["write"],
         },
       };
       const parentId = pickParent(department, nodes, edges);
@@ -273,7 +276,7 @@ export function useOrgGraph(orgId: string) {
   const importOrg = useCallback(
     async (file: File) => {
       load(parseOrgFile(await file.text()));
-      setStep(4);
+      setStep(5);
       refit();
     },
     [load, refit],
@@ -281,7 +284,7 @@ export function useOrgGraph(orgId: string) {
 
   const loadExample = useCallback(() => {
     load(exampleOrg());
-    setStep(4);
+    setStep(5);
     refit();
   }, [load, refit]);
 

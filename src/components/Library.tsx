@@ -77,7 +77,6 @@ export default function Library() {
                 <span className="mt-1 block text-[13px] text-dim">
                   {entry.agents} {entry.agents === 1 ? "agente" : "agentes"} ·{" "}
                   {entry.areas} {entry.areas === 1 ? "área" : "áreas"}
-                  {entry.step < 4 ? " · sin terminar" : ""}
                   {savedLabel(entry.savedAt)
                     ? ` · ${savedLabel(entry.savedAt)}`
                     : ""}
@@ -121,7 +120,7 @@ export default function Library() {
         </div>
 
         <footer className="mt-8 flex flex-wrap items-center gap-2 border-t border-hairline pt-6">
-          <Button onClick={() => open(createOrg(exampleOrg(), 4))}>
+          <Button onClick={() => open(createOrg(exampleOrg(), 5))}>
             Cargar el ejemplo
           </Button>
           <Button onClick={() => fileRef.current?.click()}>

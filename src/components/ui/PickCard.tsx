@@ -27,6 +27,8 @@ interface PickCardProps {
   title: string;
   subtitle?: string;
   badge?: ReactNode;
+  /** Sits between the check and the title, for an avatar. */
+  media?: ReactNode;
   locked?: boolean;
   onClick: () => void;
 }
@@ -36,6 +38,7 @@ export default function PickCard({
   title,
   subtitle,
   badge,
+  media,
   locked = false,
   onClick,
 }: PickCardProps) {
@@ -50,6 +53,7 @@ export default function PickCard({
       } ${locked ? "cursor-default opacity-70" : ""}`}
     >
       <CheckMark active={active} />
+      {media}
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <span className="text-[15px] leading-snug font-medium text-ink">

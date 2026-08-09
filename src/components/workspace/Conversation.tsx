@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import Avatar from "@/components/ui/Avatar";
 import Button from "@/components/ui/Button";
 import Markdown from "@/components/ui/Markdown";
 import type { ThreadStep } from "@/lib/run-types";
@@ -32,6 +33,7 @@ function TraceLine({ step }: { step: ThreadStep }) {
           onClick={() => setOpen((v) => !v)}
           className="flex w-full items-center gap-2 px-3 py-2 text-left"
         >
+          <Avatar seed={step.agentId} size={20} />
           <span className="min-w-0 flex-1 truncate text-[12px] text-ink">
             {step.role || "Agente"} respondió
           </span>
@@ -103,7 +105,9 @@ export default function Conversation({
   };
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col bg-canvas">
+    // A column of its own once the pane sits beside it; the whole width until
+    // then, where the pane is a drawer over the top.
+    <section className="flex min-w-0 flex-1 flex-col bg-canvas lg:w-[var(--chat)] lg:flex-none">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[680px] px-8 py-10">
           {task === null ? (

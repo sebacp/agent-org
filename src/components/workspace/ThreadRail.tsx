@@ -74,7 +74,51 @@ export default function ThreadRail({
         </button>
       </div>
 
-      <nav className="mt-4 min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+      {/* Above the thread list: the pane these open is the thing you came to
+          see, and it shouldn't drift down as the list grows. */}
+      <nav className="mt-3 px-3 pb-3">
+        <button
+          type="button"
+          onClick={onOrg}
+          className={`flex w-full items-center rounded-lg px-3 py-2 text-[13px] transition-colors ${
+            orgOpen
+              ? "bg-raised text-ink"
+              : "text-dim hover:bg-raised/60 hover:text-ink"
+          }`}
+        >
+          Organigrama
+        </button>
+        <button
+          type="button"
+          onClick={onTasks}
+          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-colors ${
+            tasksOpen
+              ? "bg-raised text-ink"
+              : "text-dim hover:bg-raised/60 hover:text-ink"
+          }`}
+        >
+          <span>Pendientes</span>
+          <span
+            className={`text-[12px] ${blockedCount ? "text-ink" : "text-faint"}`}
+          >
+            {blockedCount}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={onFiles}
+          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-colors ${
+            filesOpen
+              ? "bg-raised text-ink"
+              : "text-dim hover:bg-raised/60 hover:text-ink"
+          }`}
+        >
+          <span>Biblioteca</span>
+          <span className="text-[12px] text-faint">{fileCount}</span>
+        </button>
+      </nav>
+
+      <nav className="min-h-0 flex-1 overflow-y-auto border-t border-hairline px-3 py-3">
         {threads.map((thread) => (
           <div key={thread.id} className="group relative">
             <button
@@ -128,50 +172,6 @@ export default function ThreadRail({
           </p>
         ) : null}
       </nav>
-
-      <footer className="border-t border-hairline p-3">
-        {/* Between the rail appearing and the pane docking there is no other
-            way in, and the organigrama is the thing you came to see. */}
-        <button
-          type="button"
-          onClick={onOrg}
-          className={`flex w-full items-center rounded-lg px-3 py-2 text-[13px] transition-colors ${
-            orgOpen
-              ? "bg-raised text-ink"
-              : "text-dim hover:bg-raised/60 hover:text-ink"
-          }`}
-        >
-          Organigrama
-        </button>
-        <button
-          type="button"
-          onClick={onTasks}
-          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-colors ${
-            tasksOpen
-              ? "bg-raised text-ink"
-              : "text-dim hover:bg-raised/60 hover:text-ink"
-          }`}
-        >
-          <span>Pendientes</span>
-          <span
-            className={`text-[12px] ${blockedCount ? "text-ink" : "text-faint"}`}
-          >
-            {blockedCount}
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={onFiles}
-          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-colors ${
-            filesOpen
-              ? "bg-raised text-ink"
-              : "text-dim hover:bg-raised/60 hover:text-ink"
-          }`}
-        >
-          <span>Biblioteca</span>
-          <span className="text-[12px] text-faint">{fileCount}</span>
-        </button>
-      </footer>
     </aside>
   );
 }

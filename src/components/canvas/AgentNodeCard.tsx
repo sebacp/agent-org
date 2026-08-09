@@ -1,10 +1,13 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import Avatar from "@/components/ui/Avatar";
+import SourceIcon from "@/components/ui/SourceIcon";
 import { useDepartments } from "@/lib/department-context";
 import { modelLabel } from "@/lib/models";
 import { departmentLabel } from "@/lib/roles";
 import { useAgentStatus } from "@/lib/run-context";
 import type { AgentStatus } from "@/lib/run-types";
+import { useSourceCatalog } from "@/lib/source-context";
 import type { AgentNode } from "@/lib/types";
 
 const STATUS_LABEL: Record<Exclude<AgentStatus, "idle">, string> = {
@@ -23,10 +26,29 @@ const STATUS_STYLE: Record<Exclude<AgentStatus, "idle">, string> = {
   error: "bg-red-50 text-red-700",
 };
 
+/** More than this and the chips take over the card. */
+const MAX_CHIPS = 3;
+
 function AgentNodeCard({ id, data, selected }: NodeProps<AgentNode>) {
   const departments = useDepartments();
+  const catalog = useSourceCatalog();
   const status = useAgentStatus(id);
   const busy = status === "planning" || status === "working";
+
+  // A grant can outlive the source it points at, and one that no longer exists
+  // is nothing the agent can reach.
+  const connected = (data.sources ?? []).flatMap((grant) => {
+    const source = catalog.find((s) => s.id === grant.sourceId);
+    if (!source) return [];
+    return [
+      {
+        id: grant.sourceId,
+        label: source.label,
+        url: source.url,
+        tools: grant.tools,
+      },
+    ];
+  });
 
   return (
     <div
@@ -51,10 +73,15 @@ function AgentNodeCard({ id, data, selected }: NodeProps<AgentNode>) {
         ) : null}
       </div>
 
-      <p className="mt-1.5 text-[14px] leading-tight font-medium text-ink">
-        {data.role.trim() || "Sin rol"}
-      </p>
-      <p className="mt-0.5 truncate text-[11px] text-faint">{data.name}</p>
+      <div className="mt-1.5 flex items-center gap-2.5">
+        <Avatar seed={id} size={34} />
+        <div className="min-w-0">
+          <p className="truncate text-[14px] leading-tight font-medium text-ink">
+            {data.role.trim() || "Sin rol"}
+          </p>
+          <p className="mt-0.5 truncate text-[11px] text-faint">{data.name}</p>
+        </div>
+      </div>
 
       <p className="mt-2.5 line-clamp-2 text-[11px] leading-relaxed text-dim">
         {data.instructions.trim() || (
@@ -65,6 +92,27 @@ function AgentNodeCard({ id, data, selected }: NodeProps<AgentNode>) {
       <p className="mt-2.5 font-mono text-[10px] text-faint">
         {modelLabel(data.model)}
       </p>
+
+      {connected.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {connected.slice(0, MAX_CHIPS).map((source) => (
+            <span
+              key={source.id}
+              title={source.tools.join(", ")}
+              className="flex max-w-full items-center gap-1 rounded-md bg-raised px-1.5 py-0.5 text-[10px] text-dim"
+            >
+              <SourceIcon label={source.label} url={source.url} size={12} />
+              <span className="truncate">{source.label || "Sin nombre"}</span>
+              <span className="text-faint">{source.tools.length}</span>
+            </span>
+          ))}
+          {connected.length > MAX_CHIPS ? (
+            <span className="rounded-md bg-raised px-1.5 py-0.5 text-[10px] text-faint">
+              +{connected.length - MAX_CHIPS}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       <Handle type="source" position={Position.Bottom} />
     </div>

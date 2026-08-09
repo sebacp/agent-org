@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { FileFilter, FileMeta, FileRecord } from "@/lib/file-types";
 import { isSafeId } from "@/lib/id";
+import { publish } from "@/server/bus";
 
 const ROOT = path.join(process.cwd(), ".data");
 
@@ -42,9 +43,12 @@ async function readIndex(orgId: string): Promise<FileMeta[]> {
   }
 }
 
+// Every change to the library lands here, so this is where the open panes get
+// told: an agent filing something mid-run is the common case.
 async function writeIndex(orgId: string, entries: FileMeta[]): Promise<void> {
   await mkdir(orgDir(orgId), { recursive: true });
   await writeFile(indexPath(orgId), JSON.stringify(entries, null, 2), "utf8");
+  publish(orgId, "files");
 }
 
 function matches(meta: FileMeta, filter: FileFilter, haystack: string): boolean {

@@ -1,6 +1,10 @@
 import type { FileFilter, FileMeta, FileRecord } from "@/lib/file-types";
 import type { Thread } from "@/lib/run-types";
-import type { SourceProbe, SourceView } from "@/lib/source-types";
+import type {
+  SourceDraft,
+  SourceProbe,
+  SourceView,
+} from "@/lib/source-types";
 import type { PendingTask, TaskAttachment } from "@/lib/task-types";
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
@@ -115,7 +119,7 @@ export async function fetchSources(orgId: string): Promise<SourceView[]> {
 /** Saving always reconnects, so the answer says whether the source works. */
 export async function saveSource(
   orgId: string,
-  input: Partial<SourceView> & { token?: string },
+  input: SourceDraft,
 ): Promise<{ source: SourceView; probe: SourceProbe }> {
   return json<{ source: SourceView; probe: SourceProbe }>(
     `/api/sources?orgId=${encodeURIComponent(orgId)}`,

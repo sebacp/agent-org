@@ -51,6 +51,8 @@ export function buildRunRequest(
       department: node.data.department,
       instructions: node.data.instructions,
       model: node.data.model,
+      sources: node.data.sources ?? [],
+      library: node.data.library ?? ["write"],
     })),
     reports,
     rootId,

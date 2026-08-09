@@ -20,7 +20,7 @@ export interface LibraryEntry {
   agents: number;
   areas: number;
   savedAt: string;
-  /** Which wizard step to reopen on, so half-built companies resume in place. */
+  /** Which editor section to reopen on, so you land where you left off. */
   step: number;
 }
 
@@ -79,7 +79,7 @@ function adoptLegacyOrg(): void {
     const parsed: unknown = JSON.parse(raw);
     if (!isOrgChartFile(parsed)) return;
     const step = Number(window.localStorage.getItem(LEGACY_STEP_KEY));
-    saveOrgFile(newId("org"), migrateOrgFile(parsed), step >= 1 && step <= 4 ? step : 4);
+    saveOrgFile(newId("org"), migrateOrgFile(parsed), step >= 1 && step <= 5 ? step : 5);
   } catch {
     // A corrupt legacy blob is simply dropped.
   } finally {
@@ -142,7 +142,7 @@ export function createOrg(state: OrgState, step = 1): string {
 
 export function createOrgFromFile(file: OrgChartFile): string {
   const id = newId("org");
-  saveOrgFile(id, file, 4);
+  saveOrgFile(id, file, 5);
   return id;
 }
 
@@ -154,7 +154,7 @@ export function removeOrg(id: string): void {
 
 export function readStep(id: string, fallback: number): number {
   const step = readIndex().find((e) => e.id === id)?.step;
-  return step && step >= 1 && step <= 4 ? step : fallback;
+  return step && step >= 1 && step <= 5 ? step : fallback;
 }
 
 export function writeStep(id: string, step: number): void {

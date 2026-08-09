@@ -12,7 +12,7 @@ import {
   splitPrompt,
   systemPrompt,
 } from "@/server/prompts";
-import { sourcesForDepartment } from "@/server/sources";
+import { sourcesForAgent } from "@/server/sources";
 import { runTool, toolsFor, type ToolSchema } from "@/server/tools";
 
 interface Assignment {
@@ -88,7 +88,7 @@ export async function runOrg(
     const agent = byId.get(agentId);
     if (!agent) return "";
 
-    const sources = await sourcesForDepartment(request.orgId, agent.department);
+    const sources = await sourcesForAgent(request.orgId, agent.sources);
     const system = systemPrompt(
       agent,
       request.company,
@@ -98,7 +98,8 @@ export async function runOrg(
     // Reaching a source means connecting to it, so the list is only built if a
     // branch actually offers tools.
     let pending: Promise<ToolSchema[]> | null = null;
-    const tools = () => (pending ??= toolsFor(request.orgId, sources));
+    const tools = () =>
+      (pending ??= toolsFor(request.orgId, sources, agent.library));
     // Ancestors are excluded so a manually drawn cycle can't recurse forever.
     const reports = (request.reports[agentId] ?? [])
       .filter((id) => !ancestors.has(id) && byId.has(id))
@@ -113,6 +114,7 @@ export async function runOrg(
         toolCall.function.arguments,
         agent,
         sources,
+        agent.library,
       );
       emit({
         type: "tool",

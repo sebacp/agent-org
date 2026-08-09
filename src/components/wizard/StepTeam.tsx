@@ -1,3 +1,4 @@
+import Avatar from "@/components/ui/Avatar";
 import Button from "@/components/ui/Button";
 import PickCard, { Tag } from "@/components/ui/PickCard";
 import StepShell from "@/components/wizard/StepShell";
@@ -11,7 +12,6 @@ interface StepTeamProps {
   onToggleRole: (preset: RolePreset, department: string) => void;
   onAddAgent: (preset: RolePreset, department: string) => string;
   onOpenAgent: (id: string) => void;
-  onBack: () => void;
   onNext: () => void;
 }
 
@@ -21,14 +21,12 @@ export default function StepTeam({
   onToggleRole,
   onAddAgent,
   onOpenAgent,
-  onBack,
   onNext,
 }: StepTeamProps) {
   return (
     <StepShell
       title="¿Quién trabaja en cada área?"
       subtitle="Tocá un rol para sumarlo. El primero de cada área queda a cargo y le reporta al CEO; los que agregues después le reportan a él."
-      onBack={onBack}
       onNext={onNext}
       nextLabel="Ver el organigrama"
       footerNote={`${nodes.length} ${nodes.length === 1 ? "agente" : "agentes"}`}
@@ -66,6 +64,9 @@ export default function StepTeam({
                         locked={isCeo}
                         title={preset.role}
                         subtitle={preset.name}
+                        media={
+                          node ? <Avatar seed={node.id} size={28} /> : undefined
+                        }
                         badge={
                           isCeo ? (
                             <Tag>siempre</Tag>
@@ -88,6 +89,7 @@ export default function StepTeam({
                       active
                       title={node.data.role || "Sin rol"}
                       subtitle={node.data.name}
+                      media={<Avatar seed={node.id} size={28} />}
                       onClick={() => onOpenAgent(node.id)}
                     />
                     <EditLink node={node} onOpen={onOpenAgent} />

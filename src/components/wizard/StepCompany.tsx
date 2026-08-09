@@ -17,8 +17,8 @@ export default function StepCompany({
 }: StepCompanyProps) {
   return (
     <StepShell
-      title="Empecemos por tu empresa"
-      subtitle="Vas a armar un equipo de agentes que trabaja como una compañía. Primero contales dónde trabajan."
+      title="La empresa"
+      subtitle="Tus agentes trabajan como una compañía. Esto es lo que saben de dónde trabajan, y va en el contexto de todos."
       onNext={onNext}
       nextDisabled={!company.name.trim()}
     >

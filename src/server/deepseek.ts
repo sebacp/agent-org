@@ -4,8 +4,20 @@ import type { ToolSchema } from "@/server/tools";
 
 const ENDPOINT = "https://api.deepseek.com/chat/completions";
 
-/** Tool calls can chain; this stops a model that keeps searching forever. */
-const MAX_TOOL_ROUNDS = 6;
+/**
+ * Tool calls can chain; this stops a model that keeps searching forever. Real
+ * work needs room: an API that makes you look up the operation before reading
+ * it spends three rounds before the first number arrives.
+ */
+const MAX_TOOL_ROUNDS = 12;
+
+/**
+ * Withholding the tools on the last round isn't enough on its own: a model
+ * mid-investigation writes the call it wanted to make as prose, and that ends
+ * up as the answer. Being told the search is over is what closes it cleanly.
+ */
+const CLOSING =
+  "Se te acabaron las consultas: no vas a poder usar más herramientas. Cerrá ahora con lo que ya juntaste, y si algo quedó sin confirmar decilo en una línea al final.";
 
 export interface ToolCall {
   id: string;
@@ -117,13 +129,13 @@ export async function chat(options: {
   ];
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
-    // On the last round the tools are withheld, which forces a text answer.
-    const offerTools = onTool && round < MAX_TOOL_ROUNDS ? tools : undefined;
+    const last = round === MAX_TOOL_ROUNDS;
+    if (onTool && last) messages.push({ role: "user", content: CLOSING });
     const { content, toolCalls, usage } = await call({
       apiKey,
       model,
       messages,
-      tools: offerTools,
+      tools: onTool && !last ? tools : undefined,
       signal,
     });
     onUsage?.(usage);

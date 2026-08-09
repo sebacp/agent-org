@@ -8,6 +8,8 @@ import {
   type RunRequest,
   type ThreadStep,
 } from "@/lib/run-types";
+import type { SourceGrant } from "@/lib/source-types";
+import type { LibraryPermission } from "@/lib/types";
 import { addUsage, NO_USAGE, type RunUsage } from "@/lib/usage";
 import { runOrg } from "@/server/orchestrator";
 import { saveThread, threadTitle } from "@/server/threads";
@@ -19,6 +21,30 @@ export const config = {
 
 function text(value: unknown, max: number): string {
   return typeof value === "string" ? value.slice(0, max) : "";
+}
+
+/** A grant with no tools reaches nothing, so it is dropped rather than kept. */
+function grants(value: unknown): SourceGrant[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .flatMap((item) => {
+      const raw = (item ?? {}) as Record<string, unknown>;
+      const sourceId = text(raw.sourceId, 64);
+      const tools = Array.isArray(raw.tools)
+        ? raw.tools
+            .filter((t): t is string => typeof t === "string")
+            .map((t) => t.slice(0, 120))
+            .slice(0, 200)
+        : [];
+      return sourceId && tools.length > 0 ? [{ sourceId, tools }] : [];
+    })
+    .slice(0, 24);
+}
+
+/** Reading is everyone's; the two that change the library have to be granted. */
+function permissions(value: unknown): LibraryPermission[] {
+  if (!Array.isArray(value)) return [];
+  return (["write", "delete"] as const).filter((name) => value.includes(name));
 }
 
 /** Throws with a message meant for the user; anything else is a 500. */
@@ -55,6 +81,8 @@ function parseRequest(body: unknown): RunRequest {
       department: text(a.department, 64),
       instructions: text(a.instructions, RUN_LIMITS.maxInstructionChars),
       model: coerceModel(a.model),
+      sources: grants(a.sources),
+      library: permissions(a.library),
     };
   });
 

@@ -15,7 +15,6 @@ interface StepAreasProps {
   onToggle: (id: string) => void;
   onAdd: () => string;
   onChange: (id: string, patch: Partial<Omit<DepartmentDef, "id">>) => void;
-  onBack: () => void;
   onNext: () => void;
 }
 
@@ -24,7 +23,6 @@ export default function StepAreas({
   onToggle,
   onAdd,
   onChange,
-  onBack,
   onNext,
 }: StepAreasProps) {
   const [openMission, setOpenMission] = useState<string | null>(null);
@@ -37,7 +35,6 @@ export default function StepAreas({
     <StepShell
       title="¿Qué áreas tiene?"
       subtitle="Elegí las que existan de verdad. Cada área le da a su gente una misión en común, y siempre podés sumar más después."
-      onBack={onBack}
       onNext={onNext}
       footerNote={`${departments.length} ${departments.length === 1 ? "área" : "áreas"}`}
     >

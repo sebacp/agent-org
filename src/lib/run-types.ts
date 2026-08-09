@@ -1,5 +1,10 @@
 import type { ModelId } from "@/lib/models";
-import type { CompanyProfile, DepartmentDef } from "@/lib/types";
+import type { SourceGrant } from "@/lib/source-types";
+import type {
+  CompanyProfile,
+  DepartmentDef,
+  LibraryPermission,
+} from "@/lib/types";
 import type { RunUsage, TokenUsage } from "@/lib/usage";
 
 export type AgentStatus =
@@ -17,6 +22,8 @@ export interface RunAgent {
   department: string;
   instructions: string;
   model: ModelId;
+  sources: SourceGrant[];
+  library: LibraryPermission[];
 }
 
 export interface RunRequest {

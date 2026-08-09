@@ -5,7 +5,6 @@ interface StepShellProps {
   title: string;
   subtitle: string;
   children: ReactNode;
-  onBack?: () => void;
   onNext: () => void;
   nextLabel?: string;
   nextDisabled?: boolean;
@@ -16,7 +15,6 @@ export default function StepShell({
   title,
   subtitle,
   children,
-  onBack,
   onNext,
   nextLabel = "Continuar",
   nextDisabled = false,
@@ -38,11 +36,6 @@ export default function StepShell({
 
       <footer className="border-t border-hairline bg-chrome">
         <div className="mx-auto flex w-full max-w-[640px] items-center gap-4 px-6 py-4">
-          {onBack ? (
-            <Button onClick={onBack} size="lg">
-              Atrás
-            </Button>
-          ) : null}
           <span className="min-w-0 flex-1 truncate text-[13px] text-faint">
             {footerNote}
           </span>

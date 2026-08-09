@@ -1,6 +1,7 @@
-import type { SourceDef } from "@/lib/source-types";
-import { getFile, listFiles, saveFile } from "@/server/files";
-import { callSourceTool, listSourceTools, parseToolName } from "@/server/mcp";
+import type { AllowedSource } from "@/lib/source-types";
+import type { LibraryPermission } from "@/lib/types";
+import { deleteFile, getFile, listFiles, saveFile } from "@/server/files";
+import { callSourceTool, grantedToolSchemas, parseToolName } from "@/server/mcp";
 import { createTask, listTasks, updateTask } from "@/server/tasks";
 
 export interface ToolSchema {
@@ -99,6 +100,19 @@ export const TOOLS: ToolSchema[] = [
   {
     type: "function",
     function: {
+      name: "borrar_archivo",
+      description:
+        "Borra un archivo de la biblioteca, para siempre y para todos. Usalo sólo para lo que quedó mal o duplicado, y nunca sobre algo que escribió otro sin estar seguro. Si dudás, dejalo y decilo en tu respuesta.",
+      parameters: {
+        type: "object",
+        properties: { id: string("Id del archivo.") },
+        required: ["id"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "crear_pendiente",
       description:
         "Anota que el trabajo quedó trabado porque te falta algo que no está en la biblioteca: un dato, un acceso, una decisión. La persona a cargo lo ve y lo contesta, y la empresa retoma desde ahí. Usalo en lugar de escribir un documento pidiendo requerimientos.",
@@ -138,24 +152,35 @@ export const TOOLS: ToolSchema[] = [
   },
 ];
 
+/** The library functions that only exist for an agent who was granted them. */
+const LIBRARY_GATED: Record<string, LibraryPermission> = {
+  guardar_archivo: "write",
+  borrar_archivo: "delete",
+};
+
 /**
- * The built-in seven plus whatever the areas' data sources expose. A source
- * that won't answer is left out rather than failing the run, since the agent
- * can still work from the library.
+ * The built-in functions this agent may use plus the source ones it was
+ * granted. A source that won't answer is left out rather than failing the run,
+ * since the agent can still work from the library.
  */
 export async function toolsFor(
   orgId: string,
-  sources: SourceDef[],
+  sources: AllowedSource[],
+  library: LibraryPermission[],
 ): Promise<ToolSchema[]> {
   const remote = await Promise.all(
     sources.map((source) =>
-      listSourceTools(orgId, source).catch((error: unknown) => {
+      grantedToolSchemas(orgId, source).catch((error: unknown) => {
         console.error(`Fuente ${source.id} no respondió:`, error);
         return [];
       }),
     ),
   );
-  return [...TOOLS, ...remote.flat()];
+  const own = TOOLS.filter((tool) => {
+    const needs = LIBRARY_GATED[tool.function.name];
+    return !needs || library.includes(needs);
+  });
+  return [...own, ...remote.flat()];
 }
 
 /** A whole export would not fit in the model's context, so a read gets the head. */
@@ -195,7 +220,8 @@ export async function runTool(
   name: string,
   rawArgs: string,
   agent: { id: string; role: string; department: string },
-  sources: SourceDef[] = [],
+  sources: AllowedSource[],
+  library: LibraryPermission[],
 ): Promise<ToolOutcome> {
   let args: Record<string, unknown> = {};
   try {
@@ -213,10 +239,12 @@ export async function runTool(
   const remote = parseToolName(name);
   if (remote) {
     const source = sources.find((s) => s.id === remote.sourceId);
-    if (!source) {
+    // The model can name any function it likes, so the grant is checked here
+    // and not only when the catalog is built.
+    if (!source || !source.allowed.includes(remote.tool)) {
       return {
-        summary: `pidió una fuente que no tiene (${remote.sourceId})`,
-        content: "Esa fuente no está conectada a tu área.",
+        summary: `pidió una función que no tiene (${remote.tool})`,
+        content: "No tenés acceso a esa función. Usá las que sí te dieron.",
       };
     }
     const label = source.label || "la fuente";
@@ -233,6 +261,19 @@ export async function runTool(
         }. Seguí con lo que tengas o dejá un pendiente.`,
       };
     }
+  }
+
+  // Same as with a source: the catalog already left this out, but a model is
+  // free to name anything, so the permission is checked where it acts.
+  const needs = LIBRARY_GATED[name];
+  if (needs && !library.includes(needs)) {
+    return {
+      summary: `quiso ${needs === "delete" ? "borrar" : "guardar"} sin permiso`,
+      content:
+        needs === "delete"
+          ? "No podés borrar archivos. Si hay que sacar uno, dejá un pendiente."
+          : "No podés guardar en la biblioteca. Devolvé el trabajo en tu respuesta.",
+    };
   }
 
   switch (name) {
@@ -309,6 +350,21 @@ export async function runTool(
         // and nothing needs it again within the same run.
         content: `Guardado en la biblioteca como "${meta.title}".`,
         fileId: meta.id,
+      };
+    }
+
+    case "borrar_archivo": {
+      const file = await getFile(orgId, asString(args.id));
+      if (!file) {
+        return {
+          summary: "no encontró el archivo",
+          content: "No existe ningún archivo con ese id.",
+        };
+      }
+      await deleteFile(orgId, file.id);
+      return {
+        summary: `borró "${file.title}"`,
+        content: `Saqué "${file.title}" de la biblioteca. Decilo en tu respuesta.`,
       };
     }
 

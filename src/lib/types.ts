@@ -1,5 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
 import type { ModelId } from "@/lib/models";
+import type { SourceGrant } from "@/lib/source-types";
 
 export type Department = string;
 
@@ -22,12 +23,21 @@ export interface CompanyProfile {
   purpose: string;
 }
 
+/**
+ * What an agent may do to the shared library beyond reading it, which everyone
+ * can always do: the library only works if what one agent files another finds.
+ */
+export type LibraryPermission = "write" | "delete";
+
 export interface AgentData extends Record<string, unknown> {
   role: string;
   name: string;
   department: Department;
   instructions: string;
   model: ModelId;
+  /** The MCP sources this agent may reach, function by function. */
+  sources: SourceGrant[];
+  library: LibraryPermission[];
 }
 
 export type AgentNode = Node<AgentData, "agent">;
@@ -46,7 +56,7 @@ export interface OrgEdgeData extends Record<string, unknown> {
 export type OrgEdge = Edge<OrgEdgeData, "org">;
 
 export interface OrgChartFile {
-  schemaVersion: 4;
+  schemaVersion: 6;
   company: CompanyProfile;
   departments: DepartmentDef[];
   nodes: AgentNode[];
@@ -54,7 +64,7 @@ export interface OrgChartFile {
   savedAt: string;
 }
 
-export const SCHEMA_VERSION = 4 as const;
+export const SCHEMA_VERSION = 6 as const;
 
 /** Older files stay readable; `migrateOrgFile` remaps what changed. */
-export const READABLE_VERSIONS: number[] = [3, 4];
+export const READABLE_VERSIONS: number[] = [3, 4, 5, 6];

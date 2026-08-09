@@ -43,14 +43,24 @@ export function isOrgChartFile(value: unknown): value is OrgChartFile {
   );
 }
 
-/** v3 stored Claude model ids, which no longer exist in the catalog. */
+/**
+ * v3 stored Claude model ids, which no longer exist in the catalog. v4 predates
+ * per-agent source grants, and an agent with none simply reaches nothing. v5
+ * let everyone file documents and nobody delete them, which is what an agent
+ * carried over from it keeps.
+ */
 export function migrateOrgFile(file: OrgChartFile): OrgChartFile {
   return {
     ...file,
     schemaVersion: SCHEMA_VERSION,
     nodes: file.nodes.map((node) => ({
       ...node,
-      data: { ...node.data, model: coerceModel(node.data.model) },
+      data: {
+        ...node.data,
+        model: coerceModel(node.data.model),
+        sources: Array.isArray(node.data.sources) ? node.data.sources : [],
+        library: Array.isArray(node.data.library) ? node.data.library : ["write"],
+      },
     })),
   };
 }

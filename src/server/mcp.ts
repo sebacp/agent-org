@@ -1,12 +1,20 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { SOURCE_PREFIX, type SourceDef } from "@/lib/source-types";
+import {
+  SOURCE_PREFIX,
+  type AllowedSource,
+  type SourceDef,
+  type SourceTool,
+} from "@/lib/source-types";
+import { providerFor } from "@/server/oauth";
 import type { ToolSchema } from "@/server/tools";
 
 /** A connected server holds a socket or a child process, so it doesn't linger. */
 const IDLE_MS = 5 * 60_000;
 const TOOLS_TTL_MS = 60_000;
+/** A server that keeps handing out cursors would otherwise loop forever. */
+const MAX_TOOL_PAGES = 20;
 const CALL_TIMEOUT_MS = 60_000;
 
 /** A model can't read a database dump either, so a result comes back trimmed. */
@@ -15,10 +23,17 @@ const MAX_RESULT_CHARS = 40_000;
 /** DeepSeek only accepts this shape for a function name. */
 const CALLABLE = /^[a-zA-Z0-9_-]{1,64}$/;
 
+interface McpTool {
+  name: string;
+  description?: string;
+  inputSchema?: unknown;
+  annotations?: { readOnlyHint?: boolean };
+}
+
 interface Entry {
   print: string;
   client: Promise<Client>;
-  tools?: { at: number; value: ToolSchema[] };
+  tools?: { at: number; value: McpTool[] };
   timer?: NodeJS.Timeout;
 }
 
@@ -38,12 +53,13 @@ function print(source: SourceDef): string {
   return JSON.stringify([
     source.transport,
     source.url,
+    source.auth,
     source.token,
     source.command,
   ]);
 }
 
-async function connect(source: SourceDef): Promise<Client> {
+async function connect(orgId: string, source: SourceDef): Promise<Client> {
   const client = new Client({ name: "agent-org", version: "1.0.0" });
 
   if (source.transport === "stdio") {
@@ -54,11 +70,16 @@ async function connect(source: SourceDef): Promise<Client> {
   }
 
   if (!source.url) throw new Error("La fuente no tiene URL.");
+  // With a provider the transport refreshes an expired token on its own, which
+  // is the whole point of storing the refresh token.
   await client.connect(
     new StreamableHTTPClientTransport(new URL(source.url), {
-      requestInit: source.token
-        ? { headers: { Authorization: `Bearer ${source.token}` } }
-        : undefined,
+      authProvider:
+        source.auth === "oauth" ? providerFor(orgId, source.id) : undefined,
+      requestInit:
+        source.auth === "token" && source.token
+          ? { headers: { Authorization: `Bearer ${source.token}` } }
+          : undefined,
     }),
   );
   return client;
@@ -82,7 +103,7 @@ function acquire(orgId: string, source: SourceDef): Entry {
   }
   if (existing) closeSource(orgId, source.id);
 
-  const entry: Entry = { print: print(source), client: connect(source) };
+  const entry: Entry = { print: print(source), client: connect(orgId, source) };
   pool.set(key, entry);
   // A server that refused the connection shouldn't poison the next attempt.
   entry.client.catch(() => {
@@ -116,30 +137,59 @@ export function parseToolName(
   return { sourceId: rest.slice(0, cut), tool: rest.slice(cut + 2) };
 }
 
-interface McpTool {
-  name: string;
-  description?: string;
-  inputSchema?: unknown;
-  annotations?: { readOnlyHint?: boolean };
-}
-
 /** Throws whatever the transport threw, so the caller can show a real reason. */
-export async function listSourceTools(
+async function discover(
   orgId: string,
   source: SourceDef,
-): Promise<ToolSchema[]> {
+): Promise<McpTool[]> {
   const entry = acquire(orgId, source);
   if (entry.tools && Date.now() - entry.tools.at < TOOLS_TTL_MS) {
     return entry.tools.value;
   }
 
   const client = await entry.client;
-  const { tools } = (await client.listTools()) as unknown as {
-    tools: McpTool[];
-  };
+  // A big server answers in pages, and stopping at the first one would hide the
+  // rest of its functions without ever looking like a failure.
+  const tools: McpTool[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_TOOL_PAGES; page += 1) {
+    const result = (await client.listTools(
+      cursor ? { cursor } : {},
+    )) as unknown as { tools: McpTool[]; nextCursor?: string };
+    tools.push(...result.tools);
+    cursor = result.nextCursor;
+    if (!cursor) break;
+  }
 
-  const value = tools
-    .filter((tool) => !(source.readOnly && tool.annotations?.readOnlyHint === false))
+  // A name the API would reject takes the whole request down with it, and one
+  // nobody can call has no business showing up in the picker either.
+  const value = tools.filter((tool) =>
+    CALLABLE.test(toolName(source.id, tool.name)),
+  );
+  entry.tools = { at: Date.now(), value };
+  return value;
+}
+
+/** What the source offers, in the shape the editor lists and stores. */
+export async function listSourceTools(
+  orgId: string,
+  source: SourceDef,
+): Promise<SourceTool[]> {
+  return (await discover(orgId, source)).map((tool) => ({
+    name: tool.name,
+    description: (tool.description ?? "").trim().slice(0, 300),
+    readOnly: tool.annotations?.readOnlyHint === true,
+  }));
+}
+
+/** Only what this agent was granted, in the shape DeepSeek takes. */
+export async function grantedToolSchemas(
+  orgId: string,
+  source: AllowedSource,
+): Promise<ToolSchema[]> {
+  const allowed = new Set(source.allowed);
+  return (await discover(orgId, source))
+    .filter((tool) => allowed.has(tool.name))
     .map((tool) => ({
       type: "function" as const,
       function: {
@@ -152,12 +202,7 @@ export async function listSourceTools(
           properties: {},
         },
       },
-    }))
-    // A name the API would reject takes the whole request down with it.
-    .filter((tool) => CALLABLE.test(tool.function.name));
-
-  entry.tools = { at: Date.now(), value };
-  return value;
+    }));
 }
 
 interface McpContent {
