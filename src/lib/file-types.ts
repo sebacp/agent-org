@@ -9,6 +9,8 @@ export interface FileMeta {
   chars: number;
   /** Only on what came down a link as something other than text. */
   mime?: string;
+  /** The link it came from, so the same one is never filed twice. */
+  sourceUrl?: string;
   createdAt: string;
 }
 

@@ -1,9 +1,11 @@
 import { fileSize, type FileMeta } from "@/lib/file-types";
 import type { AllowedSource } from "@/lib/source-types";
 import type { LibraryPermission } from "@/lib/types";
+import { fileLinkedAssets } from "@/server/assets";
 import { asText, download } from "@/server/download";
 import {
   deleteFile,
+  findBySourceUrl,
   getFile,
   listFiles,
   saveBinaryFile,
@@ -285,9 +287,19 @@ export async function runTool(
     }
     const label = source.label || "la fuente";
     try {
+      const answer = await callSourceTool(orgId, source, remote.tool, args);
+      const { text, saved } = await fileLinkedAssets(
+        orgId,
+        { role: agent.role, department: agent.department, label },
+        answer,
+      );
+      const kept = saved[0];
       return {
-        summary: `consultó ${label} · ${remote.tool}`,
-        content: await callSourceTool(orgId, source, remote.tool, args),
+        summary: kept
+          ? `consultó ${label} · ${remote.tool} · guardó "${kept.title}"`
+          : `consultó ${label} · ${remote.tool}`,
+        content: text,
+        ...(kept ? { fileId: kept.id } : {}),
       };
     } catch (error) {
       return {
@@ -404,15 +416,27 @@ export async function runTool(
         };
       }
 
+      // What a source returned is filed the moment it comes back, so being
+      // asked again for the same link means it is already here.
+      const filed = await findBySourceUrl(orgId, url);
+      if (filed) {
+        return {
+          summary: `ya estaba · "${filed.title}"`,
+          content: `Ese link ya está guardado como "${filed.title}". No lo bajé de nuevo.`,
+          fileId: filed.id,
+        };
+      }
+
       let file;
       try {
         file = await download(url);
       } catch (error) {
+        const why = error instanceof Error ? error.message : "error desconocido";
         return {
           summary: "no pudo bajar el link",
-          content: `No pude descargarlo: ${
-            error instanceof Error ? error.message : "error desconocido"
-          }. Si el link salió de una herramienta, fijate si te dio otro; si no, decilo y seguí.`,
+          // A mistyped link fails exactly like an expired one, and a model that
+          // reads 403 as "expired" sends the company off inventing a fix.
+          content: `No pude descargarlo: ${why}. Antes de dar ninguna explicación, comprobá que el link sea idéntico al que te pasaron, carácter por carácter: si lo copiaste a mano, lo más probable es que esté mal. Buscá el archivo en la biblioteca con buscar_archivos, que suele estar ahí. Si nada de eso da, decilo y seguí.`,
         };
       }
 
@@ -420,6 +444,7 @@ export async function runTool(
         title: asString(args.titulo).trim() || file.filename,
         author: agent.role,
         area: agent.department,
+        sourceUrl: url,
         tags: Array.isArray(args.etiquetas)
           ? args.etiquetas.filter((t): t is string => typeof t === "string")
           : [],

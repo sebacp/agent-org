@@ -125,6 +125,18 @@ interface FileInput {
   author: string;
   area: string;
   tags?: string[];
+  sourceUrl?: string;
+}
+
+/**
+ * A source polled for the same generation answers with the same link every
+ * time, and an agent can be told to file something that is already filed.
+ */
+export async function findBySourceUrl(
+  orgId: string,
+  url: string,
+): Promise<FileMeta | null> {
+  return (await readIndex(orgId)).find((m) => m.sourceUrl === url) ?? null;
 }
 
 function newMeta(input: FileInput, chars: number, mime?: string): FileMeta {
@@ -136,6 +148,7 @@ function newMeta(input: FileInput, chars: number, mime?: string): FileMeta {
     tags: (input.tags ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean),
     chars,
     ...(mime ? { mime } : {}),
+    ...(input.sourceUrl ? { sourceUrl: input.sourceUrl } : {}),
     createdAt: new Date().toISOString(),
   };
 }

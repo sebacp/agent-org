@@ -107,7 +107,7 @@ export function systemPrompt(
     }.\n${agent.instructions.trim()}`,
     `La empresa tiene una biblioteca de archivos compartida. Antes de responder algo que ya podría estar escrito, buscá ahí con buscar_archivos o listar_archivos, y leé lo que sirva con leer_archivo.`,
     agent.library.includes("write")
-      ? `Si producís algo que valga la pena conservar (un plan, un análisis, un texto terminado), guardalo con guardar_archivo y mencioná en tu respuesta que lo guardaste. Para una respuesta corta no hace falta guardar nada. Si una herramienta te devuelve un link a un archivo (una imagen, un CSV, un PDF), bajalo con guardar_desde_link en vez de pasar la URL: esos links se vencen.`
+      ? `Si producís algo que valga la pena conservar (un plan, un análisis, un texto terminado), guardalo con guardar_archivo y mencioná en tu respuesta que lo guardaste. Para una respuesta corta no hace falta guardar nada. Lo que una fuente devuelve como archivo (una imagen, un CSV, un PDF) se guarda solo apenas llega, así que nombralo por su título y no por su link. Un link que venga de otro lado bajalo con guardar_desde_link.`
       : `No podés escribir en la biblioteca: devolvé el trabajo terminado en tu respuesta para que lo guarde quien corresponda.`,
     agent.library.includes("delete") &&
       `Podés borrar archivos con borrar_archivo, y eso no se deshace. Usalo sólo para lo que quedó mal o duplicado; ante la duda dejalo y decilo.`,
@@ -116,6 +116,10 @@ export function systemPrompt(
     // Blocked agents used to write requirement documents that nobody could act
     // on, which is the failure this board exists to absorb.
     `Si te falta algo que no está en la biblioteca (un dato, un acceso, una decisión que no te toca), no escribas un documento pidiéndolo ni inventes el dato: dejalo anotado con crear_pendiente y seguí con la parte que sí podés resolver. Si el acceso lo tiene otro rol de la empresa, decilo así ("esto lo puede hacer X, que tiene Y conectado") en lugar de pedir credenciales. Mirá listar_pendientes antes de arrancar, porque lo que te falta puede estar ya contestado ahí; si resolviste uno, cerralo con cerrar_pendiente.`,
+    // A link came back 403 because a manager retyped one character of a UUID,
+    // and the company spent a whole corrida diagnosing an expiry that never
+    // happened. Titles survive being written out by hand; ids and links do not.
+    `Para hablar de un archivo usá su título, no su link ni su id. Si igual tenés que pasar un link, copialo entero y exacto: cambiar un carácter da un error que parece otra cosa. Y si un link falla, no supongas que se venció — fijate primero si está bien escrito y si el archivo ya está en la biblioteca.`,
     "Escribís en español rioplatense. Sos concreto y no rellenás.\nPodés usar markdown liviano: títulos con ##, listas con guiones, **negrita** para lo importante y tablas cuando compares cosas. No abras bloques de código salvo que el contenido sea código.",
   ];
   return blocks.filter(Boolean).join("\n\n");
@@ -169,6 +173,7 @@ Reglas:
 - Incluí únicamente a quienes aportan de verdad. Si a alguien no le toca, dejalo afuera.
 - Lo que necesite una herramienta conectada va para quien la tiene, aunque el tema parezca de otro. Nadie más la puede llamar.
 - Cada encargo se tiene que entender solo: nada de "lo anterior" ni referencias al resto del equipo.
+- Si hay un archivo de por medio, nombralo por su título en la biblioteca. No copies links ni ids adentro del encargo.
 - Máximo tres oraciones por encargo.`;
 }
 
