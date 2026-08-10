@@ -280,6 +280,7 @@ export default function Workspace({ orgId }: { orgId: string }) {
                 task={run.task}
                 trace={run.trace}
                 usage={run.usage}
+                live={run.live}
                 answer={run.answer}
                 error={run.error}
                 running={run.running}

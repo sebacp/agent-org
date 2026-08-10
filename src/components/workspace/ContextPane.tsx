@@ -7,6 +7,7 @@ import {
 } from "@xyflow/react";
 import OrgCanvas from "@/components/canvas/OrgCanvas";
 import Avatar from "@/components/ui/Avatar";
+import Icon, { type IconName } from "@/components/ui/Icon";
 import Markdown from "@/components/ui/Markdown";
 import AutomationBoard from "@/components/workspace/AutomationBoard";
 import TaskBoard from "@/components/workspace/TaskBoard";
@@ -40,6 +41,31 @@ const WHEN = new Intl.DateTimeFormat("es-AR", {
 function whenLabel(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? "" : WHEN.format(date);
+}
+
+const EXT: Record<string, IconName> = {
+  csv: "table",
+  tsv: "table",
+  png: "image",
+  jpg: "image",
+  jpeg: "image",
+  webp: "image",
+  gif: "image",
+  json: "attachment",
+  yaml: "attachment",
+  yml: "attachment",
+  log: "attachment",
+  txt: "attachment",
+  md: "attachment",
+};
+
+/**
+ * Only what you upload keeps an extension; an agent titles its work in prose,
+ * and what it writes is always a document.
+ */
+function fileIcon(title: string): IconName {
+  const ext = title.toLowerCase().split(".").pop() ?? "";
+  return EXT[ext] ?? "doc";
 }
 
 interface ContextPaneProps {
@@ -115,6 +141,12 @@ export default function ContextPane({
     id: node.id,
     label: node.data.role || node.data.name || "Sin rol",
   }));
+  // A file records who wrote it by role, and the face on the chart is seeded by
+  // node id, so the library needs the way back from one to the other.
+  const byRole: Record<string, string> = {};
+  for (const node of nodes) {
+    if (node.data.role) byRole[node.data.role] ??= node.id;
+  }
   const { fitView } = useReactFlow();
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -278,15 +310,28 @@ export default function ContextPane({
                   <button
                     type="button"
                     onClick={() => onOpenFile(file.id)}
-                    className="w-full rounded-lg px-3 py-2.5 pr-7 text-left transition-colors hover:bg-raised/60"
+                    className="flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 pr-7 text-left transition-colors hover:bg-raised/60"
                   >
-                    <span className="block truncate text-[13px] text-ink">
-                      {file.title}
+                    <span className="mt-0.5 text-faint">
+                      <Icon name={fileIcon(file.title)} />
                     </span>
-                    <span className="mt-0.5 block truncate text-[11px] text-faint">
-                      {[file.author, file.area, whenLabel(file.createdAt)]
-                        .filter(Boolean)
-                        .join(" · ")}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] text-ink">
+                        {file.title}
+                      </span>
+                      <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-faint">
+                        {/* The face of whoever wrote it. What you uploaded
+                          yourself has no author on the chart, so it goes
+                          without one. */}
+                        {byRole[file.author] ? (
+                          <Avatar seed={byRole[file.author]} size={14} />
+                        ) : null}
+                        <span className="truncate">
+                          {[file.author, file.area, whenLabel(file.createdAt)]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </span>
                     </span>
                   </button>
                   <button

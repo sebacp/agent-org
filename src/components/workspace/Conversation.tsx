@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Avatar from "@/components/ui/Avatar";
 import Button from "@/components/ui/Button";
 import Markdown from "@/components/ui/Markdown";
+import type { LiveText } from "@/hooks/useOrgRun";
 import type { ThreadStep } from "@/lib/run-types";
 import {
   formatCost,
@@ -10,11 +11,16 @@ import {
   type RunUsage,
 } from "@/lib/usage";
 
+/** Reasoning runs long and only its end is news; the rest is scrollback. */
+const TAIL = 400;
+
 interface ConversationProps {
   companyName: string;
   task: string | null;
   trace: ThreadStep[];
   usage: RunUsage;
+  /** What the root agent is writing right now, before any of it is a result. */
+  live: LiveText;
   answer: string | null;
   error: string | null;
   running: boolean;
@@ -24,7 +30,14 @@ interface ConversationProps {
   onStop: () => void;
 }
 
-function TraceLine({ step }: { step: ThreadStep }) {
+function TraceLine({
+  step,
+  /** The newest line while the corrida is still going: nothing follows it yet. */
+  active = false,
+}: {
+  step: ThreadStep;
+  active?: boolean;
+}) {
   const [open, setOpen] = useState(false);
 
   if (step.kind === "result") {
@@ -60,9 +73,7 @@ function TraceLine({ step }: { step: ThreadStep }) {
         failed ? "text-red-700" : "text-faint"
       }`}
     >
-      <span className={`shrink-0 ${failed ? "text-red-700" : "text-dim"}`}>
-        {step.kind === "delegate" ? "→" : failed ? "!" : "·"}
-      </span>
+      <Avatar seed={step.agentId} size={18} className="mt-px" />
       <span className="min-w-0">
         <span className={failed ? "" : "text-dim"}>
           {step.role || "Agente"}
@@ -73,6 +84,10 @@ function TraceLine({ step }: { step: ThreadStep }) {
             ? "no pudo terminar · "
             : ""}
         {step.text}
+        {/* A failure is an ending; anything else still has something behind it. */}
+        {active && !failed ? (
+          <span className="ml-1.5 inline-block size-2.5 animate-spin rounded-full border border-hairline border-t-dim align-[-1px]" />
+        ) : null}
       </span>
     </p>
   );
@@ -83,6 +98,7 @@ export default function Conversation({
   task,
   trace,
   usage,
+  live,
   answer,
   error,
   running,
@@ -95,10 +111,13 @@ export default function Conversation({
   const tokens = totalTokens(usage);
   const prompt = usage.cached + usage.input;
   const cacheHit = prompt > 0 ? Math.round((usage.cached / prompt) * 100) : 0;
+  // Once it starts writing it has stopped reasoning, and the answer says more.
+  const thinking = live.answer ? "" : live.thinking;
+  const text = answer ?? (live.answer || null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [trace.length, answer, error]);
+  }, [trace.length, thinking.length, text, error]);
 
   const submit = () => {
     const text = draft.trim();
@@ -129,15 +148,36 @@ export default function Conversation({
                 {task}
               </p>
 
-              {trace.length > 0 ? (
+              {trace.length > 0 || thinking ? (
                 <div className="mt-7 flex flex-col gap-1.5 border-l border-hairline pl-4">
                   {trace.map((step, index) => (
-                    <TraceLine key={`${step.agentId}-${index}`} step={step} />
+                    <TraceLine
+                      key={`${step.agentId}-${index}`}
+                      step={step}
+                      // Once it is reasoning or writing below, the last line is
+                      // no longer where the corrida is.
+                      active={
+                        running &&
+                        !thinking &&
+                        !text &&
+                        index === trace.length - 1
+                      }
+                    />
                   ))}
+                  {/* The last line of the trace until something replaces it:
+                    what it is reasoning, cut to its end so a long deliberation
+                    doesn't push the rest of the corrida off screen. */}
+                  {thinking ? (
+                    <p className="px-1 text-[12px] leading-relaxed whitespace-pre-line text-faint">
+                      {thinking.length > TAIL
+                        ? `…${thinking.slice(-TAIL)}`
+                        : thinking}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
 
-              {running && trace.length === 0 ? (
+              {running && trace.length === 0 && !thinking && !text ? (
                 <p className="mt-7 text-[13px] text-faint">
                   El CEO está repartiendo el encargo…
                 </p>
@@ -149,14 +189,14 @@ export default function Conversation({
                 </p>
               ) : null}
 
-              {answer ? (
+              {/* The same card whether it is still being written or finished:
+                the text just stops growing. */}
+              {text ? (
                 <div className="mt-7 rounded-xl border border-hairline bg-panel px-5 py-4">
                   <p className="text-[11px] tracking-wide text-faint uppercase">
                     {companyName || "La empresa"}
                   </p>
-                  <Markdown className="mt-2 text-[14px] text-ink">
-                    {answer}
-                  </Markdown>
+                  <Markdown className="mt-2 text-[14px] text-ink">{text}</Markdown>
                 </div>
               ) : null}
 

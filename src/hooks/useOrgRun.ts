@@ -16,12 +16,21 @@ import type {
 } from "@/lib/types";
 import { addUsage, NO_USAGE, type RunUsage } from "@/lib/usage";
 
+/** The root agent mid-sentence: what it is reasoning and what it has written. */
+export interface LiveText {
+  thinking: string;
+  answer: string;
+}
+
+const NO_LIVE: LiveText = { thinking: "", answer: "" };
+
 interface Setters {
   statuses: (fn: (s: Record<string, AgentStatus>) => Record<string, AgentStatus>) => void;
   results: (fn: (r: Record<string, string>) => Record<string, string>) => void;
   trace: (fn: (t: ThreadStep[]) => ThreadStep[]) => void;
   spend: (fn: (s: Record<string, RunUsage>) => Record<string, RunUsage>) => void;
   total: (fn: (u: RunUsage) => RunUsage) => void;
+  live: (fn: (l: LiveText) => LiveText) => void;
   answer: (text: string) => void;
   error: (message: string) => void;
 }
@@ -34,9 +43,24 @@ function applyEvent(
 ): void {
   const role = (id: string) => roleOf.get(id) ?? id;
 
+  // Everything the root writes belongs to one round. A tool call ends that
+  // round without answering, and a status change starts a new one, so either
+  // way what is on screen is stale and would otherwise run into what follows.
+  const rootTurned = (id: string) => {
+    if (id === rootId) set.live(() => NO_LIVE);
+  };
+
   switch (event.type) {
     case "status":
       set.statuses((s) => ({ ...s, [event.agentId]: event.status }));
+      rootTurned(event.agentId);
+      break;
+    case "stream":
+      set.live((l) =>
+        event.phase === "thinking"
+          ? { ...l, thinking: l.thinking + event.text }
+          : { ...l, answer: l.answer + event.text },
+      );
       break;
     case "delegate":
       set.trace((t) => [
@@ -59,6 +83,7 @@ function applyEvent(
           text: event.summary,
         },
       ]);
+      rootTurned(event.agentId);
       break;
     case "usage": {
       const spent: RunUsage = { ...event.usage, cost: event.cost };
@@ -83,6 +108,7 @@ function applyEvent(
       break;
     case "result":
       set.results((r) => ({ ...r, [event.agentId]: event.text }));
+      rootTurned(event.agentId);
       // The root's result *is* the final answer, shown on its own below.
       if (event.agentId !== rootId) {
         set.trace((t) => [
@@ -120,6 +146,7 @@ export function useOrgRun(
   const [trace, setTrace] = useState<ThreadStep[]>([]);
   const [spend, setSpend] = useState<Record<string, RunUsage>>({});
   const [usage, setUsage] = useState<RunUsage>(NO_USAGE);
+  const [live, setLive] = useState<LiveText>(NO_LIVE);
   const [task, setTask] = useState<string | null>(null);
   const [answer, setAnswer] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +171,7 @@ export function useOrgRun(
     setTrace([]);
     setSpend({});
     setUsage(NO_USAGE);
+    setLive(NO_LIVE);
     setTask(null);
     setAnswer(null);
     setError(null);
@@ -175,6 +203,7 @@ export function useOrgRun(
       setTrace([]);
       setSpend({});
       setUsage(NO_USAGE);
+      setLive(NO_LIVE);
       setTask(prompt);
       setAnswer(null);
       setError(null);
@@ -218,6 +247,7 @@ export function useOrgRun(
               trace: setTrace,
               spend: setSpend,
               total: setUsage,
+              live: setLive,
               answer: setAnswer,
               error: setError,
             });
@@ -248,6 +278,7 @@ export function useOrgRun(
       setTrace([]);
       setSpend({});
       setUsage(NO_USAGE);
+      setLive(NO_LIVE);
       setTask(run.task);
       setAnswer(null);
       setError(null);
@@ -278,6 +309,7 @@ export function useOrgRun(
           trace: setTrace,
           spend: setSpend,
           total: setUsage,
+          live: setLive,
           answer: setAnswer,
           error: setError,
         });
@@ -302,6 +334,7 @@ export function useOrgRun(
       // A replayed thread only kept its total; the per-agent split is gone.
       setSpend({});
       setUsage(thread.usage ?? NO_USAGE);
+      setLive(NO_LIVE);
       setTask(thread.task);
       setAnswer(thread.answer);
       setError(null);
@@ -317,6 +350,7 @@ export function useOrgRun(
     trace,
     spend,
     usage,
+    live,
     task,
     answer,
     error,

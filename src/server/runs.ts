@@ -49,8 +49,13 @@ export function recordEvent(
 ): void {
   const live = running.get(orgId)?.get(threadId);
   if (!live) return;
-  live.events.push(event);
-  if (live.events.length > MAX_EVENTS) live.events.shift();
+  // A delta is worth nothing replayed — the finished text arrives as its own
+  // event — and there are thousands of them, so buffering would push the trace
+  // out of the very buffer that exists to replay it.
+  if (event.type !== "stream") {
+    live.events.push(event);
+    if (live.events.length > MAX_EVENTS) live.events.shift();
+  }
   for (const watcher of live.watchers) watcher(event);
 }
 

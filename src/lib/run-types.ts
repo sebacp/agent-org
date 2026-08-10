@@ -79,6 +79,12 @@ export type RunEvent =
   | { type: "tool"; agentId: string; summary: string; fileId?: string }
   | { type: "result"; agentId: string; text: string }
   | { type: "usage"; agentId: string; usage: TokenUsage; cost: number }
+  /**
+   * A slice of what the agent is writing right now, to be appended to whatever
+   * came before. Only the root emits these: a delegate's work is read as a step
+   * once it is finished, not letter by letter.
+   */
+  | { type: "stream"; agentId: string; phase: "thinking" | "answer"; text: string }
   /** One agent gave up; the run keeps going without it. */
   | { type: "failed"; agentId: string; message: string }
   | { type: "done"; text: string }

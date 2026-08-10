@@ -143,6 +143,16 @@ export async function runOrg(
       emit({ type: "usage", agentId, usage, cost: modelCost(agent.model, usage) });
     };
 
+    // Only the root writes to the conversation, so it is the only one worth
+    // watching live; the rest land as steps when they finish.
+    const live = agentId === request.rootId;
+    const onThinking = live
+      ? (text: string) => emit({ type: "stream", agentId, phase: "thinking", text })
+      : undefined;
+    const onText = live
+      ? (text: string) => emit({ type: "stream", agentId, phase: "answer", text })
+      : undefined;
+
     try {
       if (reports.length === 0 || depth >= RUN_LIMITS.maxDepth) {
         emit({ type: "status", agentId, status: "working" });
@@ -154,6 +164,8 @@ export async function runOrg(
           tools: await tools(),
           onTool,
           onUsage,
+          onThinking,
+          onText,
           signal,
         });
         emit({ type: "result", agentId, text });
@@ -162,13 +174,16 @@ export async function runOrg(
       }
 
       emit({ type: "status", agentId, status: "planning" });
-      // The split has to come back as clean JSON, so no tools are offered here.
+      // The split has to come back as clean JSON, so no tools are offered here
+      // and the text stays off screen: how it is deciding reads, the JSON does
+      // not.
       const plan = await chat({
         apiKey,
         model: agent.model,
         system,
         user: splitPrompt(task, reports, request, access),
         onUsage,
+        onThinking,
         signal,
       });
       const assignments = parseAssignments(plan, reports);
@@ -227,6 +242,8 @@ export async function runOrg(
         tools: await tools(),
         onTool,
         onUsage,
+        onThinking,
+        onText,
         signal,
       });
       emit({ type: "result", agentId, text });

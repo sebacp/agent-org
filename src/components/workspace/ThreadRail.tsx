@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Icon, { type IconName } from "@/components/ui/Icon";
 import type { ActiveRun, RunOrigin, Thread } from "@/lib/run-types";
 import type { PendingTask } from "@/lib/task-types";
 
@@ -30,6 +31,43 @@ function agoLabel(iso: string, now: number): string {
   if (minutes < 1) return "recién";
   if (minutes < 60) return `hace ${minutes} min`;
   return `hace ${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
+function RailTab({
+  icon,
+  label,
+  count,
+  urgent = false,
+  open,
+  onClick,
+}: {
+  icon: IconName;
+  label: string;
+  /** Hidden when there is nothing to count, as with the organigrama. */
+  count?: number;
+  urgent?: boolean;
+  open: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors ${
+        open ? "bg-raised text-ink" : "text-dim hover:bg-raised/60 hover:text-ink"
+      }`}
+    >
+      <span className={open ? "text-dim" : "text-faint"}>
+        <Icon name={icon} />
+      </span>
+      <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+      {count === undefined ? null : (
+        <span className={`text-[12px] ${urgent ? "text-ink" : "text-faint"}`}>
+          {count}
+        </span>
+      )}
+    </button>
+  );
 }
 
 interface ThreadRailProps {
@@ -121,59 +159,34 @@ export default function ThreadRail({
       {/* Above the thread list: the pane these open is the thing you came to
           see, and it shouldn't drift down as the list grows. */}
       <nav className="mt-3 px-3 pb-3">
-        <button
-          type="button"
+        <RailTab
+          icon="org"
+          label="Organigrama"
+          open={orgOpen}
           onClick={onOrg}
-          className={`flex w-full items-center rounded-lg px-3 py-2 text-[13px] transition-colors ${
-            orgOpen
-              ? "bg-raised text-ink"
-              : "text-dim hover:bg-raised/60 hover:text-ink"
-          }`}
-        >
-          Organigrama
-        </button>
-        <button
-          type="button"
+        />
+        <RailTab
+          icon="tasks"
+          label="Pendientes"
+          count={blocked.length}
+          urgent={blocked.length > 0}
+          open={tasksOpen}
           onClick={onTasks}
-          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-colors ${
-            tasksOpen
-              ? "bg-raised text-ink"
-              : "text-dim hover:bg-raised/60 hover:text-ink"
-          }`}
-        >
-          <span>Pendientes</span>
-          <span
-            className={`text-[12px] ${
-              blocked.length ? "text-ink" : "text-faint"
-            }`}
-          >
-            {blocked.length}
-          </span>
-        </button>
-        <button
-          type="button"
+        />
+        <RailTab
+          icon="library"
+          label="Biblioteca"
+          count={fileCount}
+          open={filesOpen}
           onClick={onFiles}
-          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-colors ${
-            filesOpen
-              ? "bg-raised text-ink"
-              : "text-dim hover:bg-raised/60 hover:text-ink"
-          }`}
-        >
-          <span>Biblioteca</span>
-          <span className="text-[12px] text-faint">{fileCount}</span>
-        </button>
-        <button
-          type="button"
+        />
+        <RailTab
+          icon="automations"
+          label="Automatizaciones"
+          count={automationCount}
+          open={automationsOpen}
           onClick={onAutomations}
-          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-colors ${
-            automationsOpen
-              ? "bg-raised text-ink"
-              : "text-dim hover:bg-raised/60 hover:text-ink"
-          }`}
-        >
-          <span>Automatizaciones</span>
-          <span className="text-[12px] text-faint">{automationCount}</span>
-        </button>
+        />
       </nav>
 
       <nav className="min-h-0 flex-1 overflow-y-auto border-t border-hairline px-3 py-3">
