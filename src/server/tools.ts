@@ -1,6 +1,14 @@
+import { fileSize, type FileMeta } from "@/lib/file-types";
 import type { AllowedSource } from "@/lib/source-types";
 import type { LibraryPermission } from "@/lib/types";
-import { deleteFile, getFile, listFiles, saveFile } from "@/server/files";
+import { asText, download } from "@/server/download";
+import {
+  deleteFile,
+  getFile,
+  listFiles,
+  saveBinaryFile,
+  saveFile,
+} from "@/server/files";
 import { callSourceTool, grantedToolSchemas, parseToolName } from "@/server/mcp";
 import { createTask, listTasks, updateTask } from "@/server/tasks";
 
@@ -100,6 +108,29 @@ export const TOOLS: ToolSchema[] = [
   {
     type: "function",
     function: {
+      name: "guardar_desde_link",
+      description:
+        "Descarga lo que haya detrás de un link y lo guarda en la biblioteca: una imagen que generó una fuente, un CSV, un PDF. Usalo siempre que una herramienta te devuelva una URL en vez del archivo, porque esos links se vencen y la biblioteca no. No lo uses para páginas web.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: string("El link, tal cual te lo dieron."),
+          titulo: string(
+            "Título corto y descriptivo. Si no ponés ninguno uso el nombre del archivo.",
+          ),
+          etiquetas: {
+            type: "array",
+            items: { type: "string" },
+            description: "Dos o tres etiquetas en minúsculas.",
+          },
+        },
+        required: ["url"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "borrar_archivo",
       description:
         "Borra un archivo de la biblioteca, para siempre y para todos. Usalo sólo para lo que quedó mal o duplicado, y nunca sobre algo que escribió otro sin estar seguro. Si dudás, dejalo y decilo en tu respuesta.",
@@ -155,6 +186,7 @@ export const TOOLS: ToolSchema[] = [
 /** The library functions that only exist for an agent who was granted them. */
 const LIBRARY_GATED: Record<string, LibraryPermission> = {
   guardar_archivo: "write",
+  guardar_desde_link: "write",
   borrar_archivo: "delete",
 };
 
@@ -202,12 +234,14 @@ function asLimit(value: unknown, fallback: number): number {
     : fallback;
 }
 
-function renderList(
-  files: { id: string; title: string; author: string; chars: number }[],
-): string {
+function renderList(files: FileMeta[]): string {
   if (files.length === 0) return "No hay archivos que coincidan.";
   return files
-    .map((f) => `${f.id} · ${f.title} · por ${f.author} · ${f.chars} caracteres`)
+    .map((f) =>
+      [f.id, f.title, `por ${f.author}`, f.mime, fileSize(f)]
+        .filter(Boolean)
+        .join(" · "),
+    )
     .join("\n");
 }
 
@@ -312,6 +346,12 @@ export async function runTool(
           content: "No existe ningún archivo con ese id.",
         };
       }
+      if (file.mime) {
+        return {
+          summary: `miró "${file.title}"`,
+          content: `"${file.title}" es un ${file.mime} de ${fileSize(file)}. No es texto: está en la biblioteca para que lo abra una persona, y vos no lo podés leer. Nombralo en tu respuesta y seguí.`,
+        };
+      }
       if (file.content.length <= MAX_READ_CHARS) {
         return {
           summary: `leyó "${file.title}"`,
@@ -351,6 +391,52 @@ export async function runTool(
         // The id is deliberately withheld: models repeat it back at the user,
         // and nothing needs it again within the same run.
         content: `Guardado en la biblioteca como "${meta.title}".`,
+        fileId: meta.id,
+      };
+    }
+
+    case "guardar_desde_link": {
+      const url = asString(args.url).trim();
+      if (!url) {
+        return {
+          summary: "no dio el link",
+          content: "No guardé nada: vino sin url.",
+        };
+      }
+
+      let file;
+      try {
+        file = await download(url);
+      } catch (error) {
+        return {
+          summary: "no pudo bajar el link",
+          content: `No pude descargarlo: ${
+            error instanceof Error ? error.message : "error desconocido"
+          }. Si el link salió de una herramienta, fijate si te dio otro; si no, decilo y seguí.`,
+        };
+      }
+
+      const shared = {
+        title: asString(args.titulo).trim() || file.filename,
+        author: agent.role,
+        area: agent.department,
+        tags: Array.isArray(args.etiquetas)
+          ? args.etiquetas.filter((t): t is string => typeof t === "string")
+          : [],
+      };
+      const text = asText(file);
+      const meta =
+        text === null
+          ? await saveBinaryFile(orgId, {
+              ...shared,
+              bytes: file.bytes,
+              mime: file.mime,
+            })
+          : await saveFile(orgId, { ...shared, content: text });
+
+      return {
+        summary: `bajó "${meta.title}" · ${fileSize(meta)}`,
+        content: `Descargado y guardado en la biblioteca como "${meta.title}" (${meta.mime ?? "texto"}, ${fileSize(meta)}). Decí en tu respuesta que quedó ahí, y no repitas el link: ya no hace falta.`,
         fileId: meta.id,
       };
     }

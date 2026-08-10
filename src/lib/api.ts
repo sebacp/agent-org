@@ -80,6 +80,13 @@ export async function fetchFile(
   return file;
 }
 
+/** Where the bytes of a file that isn't text actually live. */
+export function fileRawUrl(orgId: string, fileId: string): string {
+  return `/api/files/${encodeURIComponent(fileId)}?orgId=${encodeURIComponent(
+    orgId,
+  )}&raw=1`;
+}
+
 export async function uploadFile(
   orgId: string,
   input: { title: string; content: string; area: string },

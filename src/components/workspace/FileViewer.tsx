@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import Button from "@/components/ui/Button";
 import Markdown from "@/components/ui/Markdown";
-import { fetchFile } from "@/lib/api";
-import type { FileRecord } from "@/lib/file-types";
+import { fetchFile, fileRawUrl } from "@/lib/api";
+import { fileSize, isImage, type FileRecord } from "@/lib/file-types";
 
 /** Data you uploaded is not prose: Markdown would swallow its line breaks. */
 const RAW = /\.(csv|tsv|json|ya?ml|log)$/i;
@@ -64,7 +64,27 @@ export default function FileViewer({
             <p className="text-[13px] text-red-700">{error}</p>
           ) : file ? (
             <>
-              {RAW.test(file.title) ? (
+              {isImage(file) ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={fileRawUrl(orgId, file.id)}
+                  alt={file.title}
+                  className="mx-auto max-w-full rounded-lg"
+                />
+              ) : file.mime ? (
+                <div className="py-6 text-center">
+                  <p className="text-[13px] text-dim">
+                    {file.mime} · {fileSize(file)}
+                  </p>
+                  <a
+                    href={fileRawUrl(orgId, file.id)}
+                    download={file.title}
+                    className="mt-3 inline-block text-[13px] text-ink underline underline-offset-4"
+                  >
+                    Descargar
+                  </a>
+                </div>
+              ) : RAW.test(file.title) ? (
                 <pre className="overflow-x-auto text-[12px] leading-relaxed whitespace-pre text-ink">
                   {file.content}
                 </pre>
@@ -73,7 +93,7 @@ export default function FileViewer({
                   {file.content}
                 </Markdown>
               )}
-              {file.content.length < file.chars ? (
+              {!file.mime && file.content.length < file.chars ? (
                 <p className="mt-4 border-t border-hairline pt-3 text-[12px] text-faint">
                   Mostrando los primeros{" "}
                   {file.content.length.toLocaleString("es-AR")} caracteres de{" "}

@@ -12,7 +12,7 @@ import Markdown from "@/components/ui/Markdown";
 import AutomationBoard from "@/components/workspace/AutomationBoard";
 import TaskBoard from "@/components/workspace/TaskBoard";
 import type { Automation, AutomationDraft } from "@/lib/automation-types";
-import type { FileMeta } from "@/lib/file-types";
+import { isImage, type FileMeta } from "@/lib/file-types";
 import type { PendingTask, TaskAttachment } from "@/lib/task-types";
 import type { AgentNode, OrgEdge } from "@/lib/types";
 import {
@@ -60,12 +60,14 @@ const EXT: Record<string, IconName> = {
 };
 
 /**
- * Only what you upload keeps an extension; an agent titles its work in prose,
- * and what it writes is always a document.
+ * What came down a link knows what it is. Past that, only what you upload keeps
+ * an extension: an agent titles its work in prose, and what it writes is always
+ * a document.
  */
-function fileIcon(title: string): IconName {
-  const ext = title.toLowerCase().split(".").pop() ?? "";
-  return EXT[ext] ?? "doc";
+function fileIcon(file: FileMeta): IconName {
+  if (isImage(file)) return "image";
+  const ext = file.title.toLowerCase().split(".").pop() ?? "";
+  return EXT[ext] ?? (file.mime ? "attachment" : "doc");
 }
 
 interface ContextPaneProps {
@@ -313,7 +315,7 @@ export default function ContextPane({
                     className="flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 pr-7 text-left transition-colors hover:bg-raised/60"
                   >
                     <span className="mt-0.5 text-faint">
-                      <Icon name={fileIcon(file.title)} />
+                      <Icon name={fileIcon(file)} />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] text-ink">

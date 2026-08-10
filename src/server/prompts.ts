@@ -107,7 +107,7 @@ export function systemPrompt(
     }.\n${agent.instructions.trim()}`,
     `La empresa tiene una biblioteca de archivos compartida. Antes de responder algo que ya podría estar escrito, buscá ahí con buscar_archivos o listar_archivos, y leé lo que sirva con leer_archivo.`,
     agent.library.includes("write")
-      ? `Si producís algo que valga la pena conservar (un plan, un análisis, un texto terminado), guardalo con guardar_archivo y mencioná en tu respuesta que lo guardaste. Para una respuesta corta no hace falta guardar nada.`
+      ? `Si producís algo que valga la pena conservar (un plan, un análisis, un texto terminado), guardalo con guardar_archivo y mencioná en tu respuesta que lo guardaste. Para una respuesta corta no hace falta guardar nada. Si una herramienta te devuelve un link a un archivo (una imagen, un CSV, un PDF), bajalo con guardar_desde_link en vez de pasar la URL: esos links se vencen.`
       : `No podés escribir en la biblioteca: devolvé el trabajo terminado en tu respuesta para que lo guarde quien corresponda.`,
     agent.library.includes("delete") &&
       `Podés borrar archivos con borrar_archivo, y eso no se deshace. Usalo sólo para lo que quedó mal o duplicado; ante la duda dejalo y decilo.`,
