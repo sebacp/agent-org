@@ -1,14 +1,14 @@
 import { memo } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, useStore, type NodeProps } from "@xyflow/react";
 import Avatar from "@/components/ui/Avatar";
 import SourceIcon from "@/components/ui/SourceIcon";
 import { useDepartments } from "@/lib/department-context";
 import { modelLabel } from "@/lib/models";
-import { departmentLabel } from "@/lib/roles";
+import { departmentLabel, ROOT_DEPARTMENT } from "@/lib/roles";
 import { useAgentStatus } from "@/lib/run-context";
 import type { AgentStatus } from "@/lib/run-types";
 import { useSourceCatalog } from "@/lib/source-context";
-import type { AgentNode } from "@/lib/types";
+import type { AgentData, AgentNode } from "@/lib/types";
 
 const STATUS_LABEL: Record<Exclude<AgentStatus, "idle">, string> = {
   planning: "repartiendo",
@@ -35,6 +35,17 @@ function AgentNodeCard({ id, data, selected }: NodeProps<AgentNode>) {
   const status = useAgentStatus(id);
   const busy = status === "planning" || status === "working";
 
+  // Nobody manages the CEO, so the top of the chart has nothing to receive: an
+  // arrow landing there would put somebody above the company.
+  const isRoot = useStore((state) => {
+    for (const node of state.nodeLookup.values()) {
+      if ((node.data as AgentData).department === ROOT_DEPARTMENT) {
+        return node.id === id;
+      }
+    }
+    return false;
+  });
+
   // A grant can outlive the source it points at, and one that no longer exists
   // is nothing the agent can reach.
   const connected = (data.sources ?? []).flatMap((grant) => {
@@ -58,7 +69,7 @@ function AgentNodeCard({ id, data, selected }: NodeProps<AgentNode>) {
           : "border-hairline shadow-[0_1px_2px_rgba(22,21,15,0.05)]"
       }`}
     >
-      <Handle type="target" position={Position.Top} />
+      {isRoot ? null : <Handle type="target" position={Position.Top} />}
 
       <div className="flex items-start justify-between gap-2">
         <p className="text-[10px] tracking-[0.12em] text-faint uppercase">

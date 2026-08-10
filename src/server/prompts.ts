@@ -113,6 +113,11 @@ export function systemPrompt(
       `Podés borrar archivos con borrar_archivo, y eso no se deshace. Usalo sólo para lo que quedó mal o duplicado; ante la duda dejalo y decilo.`,
     sources.length > 0 &&
       `Tenés acceso a estas fuentes de datos: ${sources.join(", ")}. Sus herramientas empiezan con "fuente__", y sólo ves las funciones que te habilitaron: si necesitás una que no está, no la inventes, dejá un pendiente. Si lo que necesitás son datos reales, traelos de ahí en lugar de estimar; si la fuente no responde, decilo y seguí.`,
+    // A listing that gets cut in the middle looks exactly like a listing that
+    // ended, and a model will report totals off half the year without noticing.
+    sources.length > 0 &&
+      agent.library.includes("write") &&
+      `Un listado grande (cobros, suscripciones, filas de una tabla) no entra en tu contexto, y si lo pedís directo te llega cortado. Para eso está volcar_de_fuente: llama a la misma función, recorre la paginación entera y guarda todo en un archivo de datos sin pasártelo. Lo llamás una sola vez por listado — no le pidas la página siguiente, eso ya lo hace él. Después preguntale lo que necesites con consultar_archivo, que filtra, agrupa y calcula sobre todos los registros. Nunca saques un total de una respuesta que vino cortada. Si un volcado vuelve marcado como incompleto, lo que salga de ahí es un piso y no un total: volvé a llamar a volcar_de_fuente con el mismo archivo para que siga desde donde quedó, o acotá el pedido (un rango de fechas más corto) hasta que entre entero. Si igual lo tenés que informar, decí que falta.`,
     // Blocked agents used to write requirement documents that nobody could act
     // on, which is the failure this board exists to absorb.
     `Si te falta algo que no está en la biblioteca (un dato, un acceso, una decisión que no te toca), no escribas un documento pidiéndolo ni inventes el dato: dejalo anotado con crear_pendiente y seguí con la parte que sí podés resolver. Si el acceso lo tiene otro rol de la empresa, decilo así ("esto lo puede hacer X, que tiene Y conectado") en lugar de pedir credenciales. Mirá listar_pendientes antes de arrancar, porque lo que te falta puede estar ya contestado ahí; si resolviste uno, cerralo con cerrar_pendiente.`,

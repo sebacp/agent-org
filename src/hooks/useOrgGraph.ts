@@ -5,10 +5,12 @@ import {
   useNodesState,
   useReactFlow,
   type Connection,
+  type XYPosition,
 } from "@xyflow/react";
 import { newId } from "@/lib/id";
 import { downloadOrg, parseOrgFile } from "@/lib/io";
 import { autoLayout } from "@/lib/layout";
+import { DEFAULT_MODEL } from "@/lib/models";
 import {
   DEPARTMENT_CATALOG,
   ROOT_DEPARTMENT,
@@ -33,6 +35,14 @@ export const STEPS = [
   { id: 5, label: "Organigrama" },
 ] as const;
 
+/** Kept in step with the card, so a new one lands centred under the pointer. */
+const CARD_WIDTH = 220;
+
+/** The top of the chart: the one in the company's own area. */
+function ceoId(nodes: AgentNode[]): string | null {
+  return nodes.find((n) => n.data.department === ROOT_DEPARTMENT)?.id ?? null;
+}
+
 /**
  * The first member of an area reports to the CEO and thereby becomes its lead;
  * everyone added after that reports to the lead. This is what lets the wizard
@@ -43,19 +53,19 @@ function pickParent(
   nodes: AgentNode[],
   edges: OrgEdge[],
 ): string | null {
-  const root = nodes.find((n) => n.data.department === ROOT_DEPARTMENT);
+  const root = ceoId(nodes);
   if (!root) return null;
-  if (department === ROOT_DEPARTMENT) return root.id;
+  if (department === ROOT_DEPARTMENT) return root;
 
   const reportsToRoot = new Set(
     edges
-      .filter((e) => e.source === root.id && e.data?.kind !== "link")
+      .filter((e) => e.source === root && e.data?.kind !== "link")
       .map((e) => e.target),
   );
   const lead = nodes.find(
     (n) => n.data.department === department && reportsToRoot.has(n.id),
   );
-  return lead?.id ?? root.id;
+  return lead?.id ?? root;
 }
 
 /**
@@ -239,6 +249,9 @@ export function useOrgGraph(orgId: string) {
   const onConnect = useCallback(
     (connection: Connection) => {
       if (connection.source === connection.target) return;
+      // The card has no top handle, but a line can still be dragged the other
+      // way round, and it would end up meaning the same thing.
+      if (connection.target === ceoId(nodes)) return;
       setEdges((current) =>
         addEdge<OrgEdge>(
           {
@@ -251,7 +264,47 @@ export function useOrgGraph(orgId: string) {
         ),
       );
     },
-    [setEdges],
+    [nodes, setEdges],
+  );
+
+  /**
+   * A line pulled from a card and dropped on bare canvas. The gesture already
+   * said everything except who this is: it named the manager and picked the
+   * spot, so the card is left blank and opened for whoever drew it.
+   */
+  const addReport = useCallback(
+    (managerId: string, position: XYPosition): string | null => {
+      const manager = nodes.find((n) => n.id === managerId);
+      if (!manager) return null;
+      const node: AgentNode = {
+        id: newId("ag"),
+        type: "agent",
+        // Dropped where the pointer was, so the card sits under it.
+        position: { x: position.x - CARD_WIDTH / 2, y: position.y },
+        data: {
+          role: "",
+          name: "",
+          department: manager.data.department,
+          model: DEFAULT_MODEL,
+          instructions: "",
+          sources: [],
+          library: ["write"],
+        },
+      };
+      setNodes([...nodes, node]);
+      setEdges([
+        ...edges,
+        {
+          id: newId("e"),
+          type: "org",
+          source: managerId,
+          target: node.id,
+          data: { kind: "delegates" },
+        },
+      ]);
+      return node.id;
+    },
+    [edges, nodes, setEdges, setNodes],
   );
 
   const runAutoLayout = useCallback(() => {
@@ -301,6 +354,7 @@ export function useOrgGraph(orgId: string) {
     onNodesChange,
     onEdgesChange,
     onConnect,
+    addReport,
     updateCompany,
     toggleDepartment,
     addDepartment,

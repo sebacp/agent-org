@@ -50,6 +50,14 @@ const SHAPES = {
   attachment: (
     <path d="M14.3 7.4 8.2 13.5a4 4 0 0 1-5.7-5.7l6.2-6.1a2.7 2.7 0 0 1 3.8 3.8l-6.2 6.1a1.3 1.3 0 0 1-1.9-1.9l5.7-5.6" />
   ),
+  save: (
+    <>
+      <path d="M2.7 4.1a1.4 1.4 0 0 1 1.4-1.4h6.2l3 3V11.9a1.4 1.4 0 0 1-1.4 1.4H4.1a1.4 1.4 0 0 1-1.4-1.4z" />
+      <path d="M5.5 2.7v3.1h4.1V2.7" />
+      <path d="M5.5 13.3V9.7h5v3.6" />
+    </>
+  ),
+  check: <path d="m3.4 8.4 3 3.1 6.2-6.9" />,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof SHAPES;

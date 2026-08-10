@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Avatar from "@/components/ui/Avatar";
 import Button from "@/components/ui/Button";
 import Markdown from "@/components/ui/Markdown";
+import SourceIcon from "@/components/ui/SourceIcon";
 import type { LiveText } from "@/hooks/useOrgRun";
 import type { ThreadStep, Turn } from "@/lib/run-types";
 import {
@@ -34,10 +35,13 @@ interface ConversationProps {
   answer: string | null;
   error: string | null;
   running: boolean;
-  /** Somebody else's corrida: this tab reads it and can't cut it short. */
+  /** Somebody else's corrida: this tab is only reading it. */
   watching: boolean;
   onStart: (task: string) => void;
+  /** Stop reading. Whatever is running keeps running. */
   onStop: () => void;
+  /** End the corrida itself, wherever it is running. */
+  onCut: () => void;
 }
 
 function TraceLine({
@@ -94,6 +98,18 @@ function TraceLine({
             ? "no pudo terminar · "
             : ""}
         {step.text}
+        {/* Whose data it was, as a mark on the line rather than one more word
+          in it: the summary says what happened, the chip says where. */}
+        {step.source ? (
+          <span className="ml-1.5 inline-flex items-center gap-1 rounded-md border border-hairline bg-panel px-1.5 py-px align-[-4px] text-[11px] text-dim">
+            <SourceIcon
+              label={step.source.label}
+              url={step.source.url}
+              size={12}
+            />
+            {step.source.label}
+          </span>
+        ) : null}
         {/* A failure is an ending; anything else still has something behind it. */}
         {active && !failed ? (
           <span className="ml-1.5 inline-block size-2.5 animate-spin rounded-full border border-hairline border-t-dim align-[-1px]" />
@@ -224,6 +240,7 @@ export default function Conversation({
   watching,
   onStart,
   onStop,
+  onCut,
 }: ConversationProps) {
   const [draft, setDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
@@ -300,12 +317,17 @@ export default function Conversation({
               }
               className="min-w-0 flex-1 resize-none bg-transparent text-[14px] leading-relaxed text-ink outline-none placeholder:text-faint"
             />
-            {running && watching ? (
-              <Button onClick={onStop}>Dejar de seguir</Button>
-            ) : running ? (
-              <Button variant="danger" onClick={onStop}>
-                Cortar
-              </Button>
+            {running ? (
+              <>
+                {/* Reading it is not the same as running it, so a corrida you
+                  only follow can be left alone or ended outright. */}
+                {watching ? (
+                  <Button onClick={onStop}>Dejar de seguir</Button>
+                ) : null}
+                <Button variant="danger" onClick={onCut}>
+                  Cortar
+                </Button>
+              </>
             ) : (
               <Button
                 variant="primary"

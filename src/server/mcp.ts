@@ -8,6 +8,7 @@ import {
   type SourceTool,
 } from "@/lib/source-types";
 import { providerFor } from "@/server/oauth";
+import { setSourceTools } from "@/server/sources";
 import type { ToolSchema } from "@/server/tools";
 
 /** A connected server holds a socket or a child process, so it doesn't linger. */
@@ -16,9 +17,6 @@ const TOOLS_TTL_MS = 60_000;
 /** A server that keeps handing out cursors would otherwise loop forever. */
 const MAX_TOOL_PAGES = 20;
 const CALL_TIMEOUT_MS = 60_000;
-
-/** A model can't read a database dump either, so a result comes back trimmed. */
-const MAX_RESULT_CHARS = 40_000;
 
 /** DeepSeek only accepts this shape for a function name. */
 const CALLABLE = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -170,16 +168,88 @@ async function discover(
   return value;
 }
 
+function toSourceTool(tool: McpTool): SourceTool {
+  return {
+    name: tool.name,
+    description: (tool.description ?? "").trim().slice(0, 300),
+    readOnly: tool.annotations?.readOnlyHint === true,
+  };
+}
+
 /** What the source offers, in the shape the editor lists and stores. */
 export async function listSourceTools(
   orgId: string,
   source: SourceDef,
 ): Promise<SourceTool[]> {
-  return (await discover(orgId, source)).map((tool) => ({
-    name: tool.name,
-    description: (tool.description ?? "").trim().slice(0, 300),
-    readOnly: tool.annotations?.readOnlyHint === true,
-  }));
+  return (await discover(orgId, source)).map(toSourceTool);
+}
+
+/** One write per changed catalog, however many agents notice at the same time. */
+const syncing: Map<string, Promise<unknown>> = ((
+  globalThis as { __mcpSync?: Map<string, Promise<unknown>> }
+).__mcpSync ??= new Map());
+
+/**
+ * A server grows functions after somebody connected it, and the sheet only ever
+ * offers what the last probe wrote down — so a tool added later can never be
+ * ticked, no matter that every corrida sees it. Bringing the stored list up to
+ * date here is what puts the new function in front of you next time you open
+ * the sheet. It grants nothing: that stays a decision, as `SourceGrant` says.
+ */
+function syncCatalog(
+  orgId: string,
+  source: AllowedSource,
+  live: McpTool[],
+): void {
+  const names = live.map((tool) => tool.name).join("\n");
+  if (names === source.tools.map((tool) => tool.name).join("\n")) return;
+
+  const key = `${orgId}::${source.id}::${names}`;
+  if (!syncing.has(key)) {
+    syncing.set(
+      key,
+      setSourceTools(orgId, source.id, live.map(toSourceTool)).catch(() => null),
+    );
+  }
+}
+
+export interface ToolArgs {
+  /** Every argument the function declares. */
+  names: string[];
+  /**
+   * The ones declared as an object with nothing said about what goes in it. A
+   * function that forwards to somebody else's API declares one of these and
+   * puts the whole real query inside, cursor included — so for those the
+   * argument list above says nothing about how the listing paginates.
+   */
+  bags: string[];
+}
+
+/**
+ * What one function takes. Paginating a listing means advancing whichever
+ * argument the server chose to call its cursor, and only the server knows
+ * that — including whether it is an argument of its own or one more key in a
+ * bag it passes straight through.
+ */
+export async function sourceToolArgs(
+  orgId: string,
+  source: SourceDef,
+  tool: string,
+): Promise<ToolArgs> {
+  const found = (await discover(orgId, source)).find((t) => t.name === tool);
+  const schema = found?.inputSchema as
+    | { properties?: Record<string, unknown> }
+    | undefined;
+  const properties = schema?.properties ?? {};
+  return {
+    names: Object.keys(properties),
+    bags: Object.entries(properties)
+      .filter(([, spec]) => {
+        const declared = spec as { type?: unknown; properties?: unknown };
+        return declared.type === "object" && !declared.properties;
+      })
+      .map(([name]) => name),
+  };
 }
 
 /** Only what this agent was granted, in the shape DeepSeek takes. */
@@ -188,7 +258,9 @@ export async function grantedToolSchemas(
   source: AllowedSource,
 ): Promise<ToolSchema[]> {
   const allowed = new Set(source.allowed);
-  return (await discover(orgId, source))
+  const live = await discover(orgId, source);
+  syncCatalog(orgId, source, live);
+  return live
     .filter((tool) => allowed.has(tool.name))
     .map((tool) => ({
       type: "function" as const,
@@ -227,7 +299,7 @@ export async function callSourceTool(
     .trim();
 
   if (!text) return result.isError ? "La fuente devolvió un error vacío." : "Sin resultados.";
-  return text.length > MAX_RESULT_CHARS
-    ? `${text.slice(0, MAX_RESULT_CHARS)}\n\n[Corté acá: la respuesta tiene ${text.length} caracteres.]`
-    : text;
+  // Whole, however big. Whether a model ever sees all of it is decided where
+  // the answer is handed over, not here: a dump has to arrive complete.
+  return text;
 }

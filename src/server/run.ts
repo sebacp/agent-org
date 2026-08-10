@@ -62,7 +62,7 @@ export async function executeRun(
   };
 
   const title = threadTitle(request.task);
-  beginRun(request.orgId, {
+  const asked = beginRun(request.orgId, {
     threadId: request.threadId,
     title,
     task: request.task,
@@ -70,9 +70,13 @@ export async function executeRun(
     origin: request.origin,
     startedAt: new Date().toISOString(),
   });
+  // Either reason to stop counts: the connection dropping, or somebody saying
+  // so out of band. An automation passes a signal that never fires, and then
+  // this is the only way to reach it.
+  const stopped = AbortSignal.any([signal, asked]);
 
   try {
-    const answer = await runOrg(request, send, signal);
+    const answer = await runOrg(request, send, stopped);
     send({ type: "done", text: answer });
 
     await appendTurn(

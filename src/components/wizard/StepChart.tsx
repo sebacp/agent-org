@@ -1,5 +1,10 @@
 import { useRef, useState } from "react";
-import type { OnEdgesChange, OnNodesChange, OnConnect } from "@xyflow/react";
+import type {
+  OnEdgesChange,
+  OnNodesChange,
+  OnConnect,
+  XYPosition,
+} from "@xyflow/react";
 import OrgCanvas from "@/components/canvas/OrgCanvas";
 import Button from "@/components/ui/Button";
 import type { AgentNode, DepartmentDef, OrgEdge } from "@/lib/types";
@@ -12,6 +17,7 @@ interface StepChartProps {
   onEdgesChange: OnEdgesChange<OrgEdge>;
   onConnect: OnConnect;
   onOpenAgent: (id: string) => void;
+  onCreateReport: (managerId: string, position: XYPosition) => void;
   onAutoLayout: () => void;
   onExport: () => void;
   onImport: (file: File) => Promise<void>;
@@ -25,6 +31,7 @@ export default function StepChart({
   onEdgesChange,
   onConnect,
   onOpenAgent,
+  onCreateReport,
   onAutoLayout,
   onExport,
   onImport,
@@ -42,6 +49,7 @@ export default function StepChart({
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeClick={onOpenAgent}
+          onCreateReport={onCreateReport}
         />
       </div>
 
@@ -55,13 +63,13 @@ export default function StepChart({
             <span className="text-[13px] text-red-700">{error}</span>
           ) : null}
 
-          {/* Dragging one handle onto another is the only way to build a link
-              by hand, and nothing on the canvas says so. */}
+          {/* The whole chart is built with the handles, and nothing on the
+              canvas says what they do. */}
           <span className="ml-auto hidden text-[12px] text-faint lg:block">
             {nodes.length} {nodes.length === 1 ? "agente" : "agentes"} en{" "}
             {departments.length} {departments.length === 1 ? "área" : "áreas"} ·
-            tocá a uno para ajustarlo, o arrastrá de un punto al otro para
-            conectarlos
+            tocá a uno para ajustarlo, arrastrá de un punto a otro para
+            conectarlos, o soltá en el vacío para sumar a alguien abajo
           </span>
         </div>
       </footer>

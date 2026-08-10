@@ -5,9 +5,12 @@ import {
   Controls,
   MarkerType,
   ReactFlow,
+  useReactFlow,
   type OnConnect,
+  type OnConnectEnd,
   type OnEdgesChange,
   type OnNodesChange,
+  type XYPosition,
 } from "@xyflow/react";
 import AgentNodeCard from "@/components/canvas/AgentNodeCard";
 import DelegationEdge from "@/components/canvas/DelegationEdge";
@@ -35,6 +38,8 @@ interface OrgCanvasProps {
   onEdgesChange: OnEdgesChange<OrgEdge>;
   onConnect: OnConnect;
   onNodeClick: (id: string) => void;
+  /** Dropping a line on bare canvas: staffing the chart without leaving it. */
+  onCreateReport?: (managerId: string, position: XYPosition) => void;
   /** A whole org has to fit a side pane, which needs to zoom out much further. */
   compact?: boolean;
 }
@@ -46,8 +51,25 @@ export default function OrgCanvas({
   onEdgesChange,
   onConnect,
   onNodeClick,
+  onCreateReport,
   compact = false,
 }: OrgCanvasProps) {
+  const { screenToFlowPosition } = useReactFlow();
+
+  // Letting go over nothing is the only case worth reading as an intention:
+  // over a handle React Flow already made the edge, and over another card the
+  // gesture was aimed at somebody who is on the chart.
+  const onConnectEnd: OnConnectEnd = (event, state) => {
+    if (!onCreateReport || state.isValid || state.toNode) return;
+    if (state.fromHandle?.type !== "source" || !state.fromNode) return;
+    const point = "changedTouches" in event ? event.changedTouches[0] : event;
+    if (!point) return;
+    onCreateReport(
+      state.fromNode.id,
+      screenToFlowPosition({ x: point.clientX, y: point.clientY }),
+    );
+  };
+
   return (
     <div className="h-full w-full">
       <ReactFlow<AgentNode, OrgEdge>
@@ -56,6 +78,7 @@ export default function OrgCanvas({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onConnectEnd={onConnectEnd}
         onNodeClick={(_, node) => onNodeClick(node.id)}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}

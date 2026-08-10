@@ -1,4 +1,5 @@
 import Button from "@/components/ui/Button";
+import Icon from "@/components/ui/Icon";
 import { STEPS, type Step } from "@/hooks/useOrgGraph";
 
 interface EditorBarProps {
@@ -6,18 +7,21 @@ interface EditorBarProps {
   step: Step;
   /** Areas and people belong to a company, so it needs a name first. */
   unlocked: boolean;
+  /** Nothing is written until this is pressed, so it has to say when there is. */
+  dirty: boolean;
   onGo: (step: Step) => void;
   onLibrary: () => void;
-  onDone: () => void;
+  onSave: () => void;
 }
 
 export default function EditorBar({
   company,
   step,
   unlocked,
+  dirty,
   onGo,
   onLibrary,
-  onDone,
+  onSave,
 }: EditorBarProps) {
   return (
     <header className="flex items-center gap-3 border-b border-hairline bg-chrome px-4 py-2">
@@ -58,8 +62,14 @@ export default function EditorBar({
         })}
       </nav>
 
-      <Button variant="primary" onClick={onDone}>
-        Listo
+      <Button
+        variant={dirty ? "primary" : "secondary"}
+        disabled={!dirty}
+        onClick={onSave}
+        className="shrink-0"
+      >
+        <Icon name={dirty ? "save" : "check"} size={15} />
+        {dirty ? "Guardar" : "Guardado"}
       </Button>
     </header>
   );

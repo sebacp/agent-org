@@ -1,8 +1,10 @@
+import { useState } from "react";
 import {
   BaseEdge,
   EdgeLabelRenderer,
   getBezierPath,
   getSmoothStepPath,
+  useReactFlow,
   type EdgeProps,
 } from "@xyflow/react";
 import type { OrgEdge } from "@/lib/types";
@@ -24,6 +26,10 @@ export default function DelegationEdge({
   markerEnd,
 }: EdgeProps<OrgEdge>) {
   const isLink = data?.kind === "link";
+  const { deleteElements } = useReactFlow();
+  // Selecting the line and hitting a key works, but nothing says so. Pointing
+  // at a line is how anyone would look for the way to cut it.
+  const [pointed, setPointed] = useState(false);
 
   // Links usually join peers on the same rank, where orthogonal routing draws a
   // hard rectangle that reads like a selection box. A curve stays legible.
@@ -39,7 +45,8 @@ export default function DelegationEdge({
     ? getBezierPath({ ...geometry, curvature: 0.55 })
     : getSmoothStepPath({ ...geometry, borderRadius: 18 });
 
-  const stroke = selected
+  const cut = pointed || selected;
+  const stroke = cut
     ? STROKE_SELECTED
     : isLink
       ? STROKE_LINK
@@ -47,28 +54,50 @@ export default function DelegationEdge({
 
   return (
     <>
-      <BaseEdge
-        id={id}
-        path={path}
-        markerEnd={isLink ? undefined : markerEnd}
-        style={{
-          stroke,
-          strokeWidth: isLink ? 1 : 1.5,
-          strokeDasharray: isLink ? "4 5" : undefined,
-        }}
-      />
-      {data?.label ? (
-        <EdgeLabelRenderer>
-          <div
-            className="nodrag nopan absolute bg-canvas px-1.5 text-[10px] text-faint"
-            style={{
-              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-            }}
-          >
-            {data.label}
-          </div>
-        </EdgeLabelRenderer>
-      ) : null}
+      <g
+        onPointerEnter={() => setPointed(true)}
+        onPointerLeave={() => setPointed(false)}
+      >
+        <BaseEdge
+          id={id}
+          path={path}
+          markerEnd={isLink ? undefined : markerEnd}
+          style={{
+            stroke,
+            strokeWidth: isLink ? 1 : 1.5,
+            strokeDasharray: isLink ? "4 5" : undefined,
+          }}
+        />
+      </g>
+
+      <EdgeLabelRenderer>
+        <div
+          className="nodrag nopan absolute flex items-center gap-1"
+          style={{
+            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+          }}
+        >
+          {data?.label ? (
+            <span className="bg-canvas px-1.5 text-[10px] text-faint">
+              {data.label}
+            </span>
+          ) : null}
+          {cut ? (
+            <button
+              type="button"
+              aria-label="Cortar la línea"
+              // The label renderer lets nothing through by default, and leaving
+              // the line for the button would otherwise close it mid-reach.
+              className="pointer-events-auto flex size-[22px] items-center justify-center rounded-full border border-hairline bg-panel text-[13px] leading-none text-dim shadow-[0_1px_2px_rgba(22,21,15,0.08)] transition-colors hover:border-red-700 hover:text-red-700"
+              onPointerEnter={() => setPointed(true)}
+              onPointerLeave={() => setPointed(false)}
+              onClick={() => void deleteElements({ edges: [{ id }] })}
+            >
+              ×
+            </button>
+          ) : null}
+        </div>
+      </EdgeLabelRenderer>
     </>
   );
 }

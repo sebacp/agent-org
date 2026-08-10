@@ -8,10 +8,10 @@ import FileViewer from "@/components/workspace/FileViewer";
 import ThreadRail from "@/components/workspace/ThreadRail";
 import { useActiveRuns } from "@/hooks/useActiveRuns";
 import { useAutomations } from "@/hooks/useAutomations";
-import { useAutosave } from "@/hooks/useAutosave";
 import { useFiles } from "@/hooks/useFiles";
 import { useOrgEvents } from "@/hooks/useOrgEvents";
 import { useOrgGraph } from "@/hooks/useOrgGraph";
+import { useOrgMirror } from "@/hooks/useOrgMirror";
 import { useOrgRun } from "@/hooks/useOrgRun";
 import { useTasks } from "@/hooks/useTasks";
 import { useSources } from "@/hooks/useSources";
@@ -25,7 +25,7 @@ import type { PendingTask } from "@/lib/task-types";
 export default function Workspace({ orgId }: { orgId: string }) {
   const router = useRouter();
   const org = useOrgGraph(orgId);
-  useAutosave(orgId, org.company, org.departments, org.nodes, org.edges);
+  useOrgMirror(orgId, org.company, org.departments, org.nodes, org.edges);
   const run = useOrgRun(
     orgId,
     org.company,
@@ -271,6 +271,7 @@ export default function Workspace({ orgId }: { orgId: string }) {
                 watching={run.watching}
                 onStart={(task) => void start(task)}
                 onStop={run.stop}
+                onCut={() => void run.cut()}
               />
             </div>
 

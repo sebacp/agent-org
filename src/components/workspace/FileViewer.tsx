@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Button from "@/components/ui/Button";
 import Markdown from "@/components/ui/Markdown";
 import { fetchFile, fileRawUrl } from "@/lib/api";
-import { fileSize, isImage, type FileRecord } from "@/lib/file-types";
+import { fileSize, isDataset, isImage, type FileRecord } from "@/lib/file-types";
 
 /** Data you uploaded is not prose: Markdown would swallow its line breaks. */
 const RAW = /\.(csv|tsv|json|ya?ml|log)$/i;
@@ -64,6 +64,14 @@ export default function FileViewer({
             <p className="text-[13px] text-red-700">{error}</p>
           ) : file ? (
             <>
+              {/* A dump that stopped short adds up to a figure that reads like
+                a total, so whoever opens it has to be told before they read a
+                single row. */}
+              {file.partial ? (
+                <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] leading-relaxed text-amber-900">
+                  Este volcado quedó incompleto: faltan registros. {file.partial}
+                </p>
+              ) : null}
               {isImage(file) ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -84,7 +92,7 @@ export default function FileViewer({
                     Descargar
                   </a>
                 </div>
-              ) : RAW.test(file.title) ? (
+              ) : isDataset(file) || RAW.test(file.title) ? (
                 <pre className="overflow-x-auto text-[12px] leading-relaxed whitespace-pre text-ink">
                   {file.content}
                 </pre>
@@ -95,9 +103,9 @@ export default function FileViewer({
               )}
               {!file.mime && file.content.length < file.chars ? (
                 <p className="mt-4 border-t border-hairline pt-3 text-[12px] text-faint">
-                  Mostrando los primeros{" "}
-                  {file.content.length.toLocaleString("es-AR")} caracteres de{" "}
-                  {file.chars.toLocaleString("es-AR")}.
+                  {isDataset(file)
+                    ? `Un volcado de ${fileSize(file)}. Esto es el principio; los agentes lo consultan entero sin abrirlo.`
+                    : `Mostrando los primeros ${file.content.length.toLocaleString("es-AR")} caracteres de ${file.chars.toLocaleString("es-AR")}.`}
                 </p>
               ) : null}
             </>

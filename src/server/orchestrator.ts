@@ -135,6 +135,7 @@ export async function runOrg(
         agentId,
         summary: outcome.summary,
         ...(outcome.fileId ? { fileId: outcome.fileId } : {}),
+        ...(outcome.source ? { source: outcome.source } : {}),
       });
       return outcome.content;
     };

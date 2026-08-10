@@ -15,6 +15,13 @@ interface LiveRun {
   run: ActiveRun;
   events: RunEvent[];
   watchers: Set<Watcher>;
+  /**
+   * Cutting the corrida short. It lives here rather than with the request that
+   * started it because the tab holding that connection is not always the one
+   * that wants to stop: a corrida can be watched from anywhere, and after a
+   * reload nobody holds it at all.
+   */
+  controller: AbortController;
 }
 
 // On the global for the same reason the bus is: editing any server file
@@ -35,11 +42,27 @@ export function listRuns(orgId: string): ActiveRun[] {
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
 }
 
-export function beginRun(orgId: string, run: ActiveRun): void {
+/** The signal to run under: aborted when anyone asks for this one to stop. */
+export function beginRun(orgId: string, run: ActiveRun): AbortSignal {
   const forOrg = running.get(orgId) ?? new Map<string, LiveRun>();
   running.set(orgId, forOrg);
-  forOrg.set(run.threadId, { run, events: [], watchers: new Set() });
+  const controller = new AbortController();
+  forOrg.set(run.threadId, {
+    run,
+    events: [],
+    watchers: new Set(),
+    controller,
+  });
   publish(orgId, "runs");
+  return controller.signal;
+}
+
+/** False when there was nothing running under that id any more. */
+export function cancelRun(orgId: string, threadId: string): boolean {
+  const live = running.get(orgId)?.get(threadId);
+  if (!live) return false;
+  live.controller.abort();
+  return true;
 }
 
 export function recordEvent(

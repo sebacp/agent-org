@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { FileFilter, FileMeta, FileRecord } from "@/lib/file-types";
 import { isSafeId } from "@/lib/id";
@@ -76,7 +76,13 @@ export async function listFiles(
 
   for (const meta of index) {
     let haystack = `${meta.title} ${meta.tags.join(" ")}`.toLowerCase();
-    if (filter.query && !haystack.includes(filter.query.toLowerCase())) {
+    // A dump is megabytes of ids and amounts: reading it to grep for a word
+    // costs a great deal and matches by accident. Its title is what it is.
+    if (
+      filter.query &&
+      meta.records === undefined &&
+      !haystack.includes(filter.query.toLowerCase())
+    ) {
       haystack += ` ${(await loadBody(orgId, meta.id)).toLowerCase()}`;
     }
     if (matches(meta, filter, haystack)) found.push(meta);
@@ -94,6 +100,9 @@ async function loadBody(orgId: string, fileId: string): Promise<string> {
   }
 }
 
+/** A dump is megabytes. Enough of it to see what it is, and no more. */
+const DATASET_PREVIEW_CHARS = 12_000;
+
 export async function getFile(
   orgId: string,
   fileId: string,
@@ -102,10 +111,22 @@ export async function getFile(
   if (!meta) return null;
   // Bytes are not something to hand to whoever asked for the content; the mime
   // on the meta is what tells them to go get them properly.
+  if (meta.mime) return { ...meta, content: "" };
+
+  const body = await loadBody(orgId, fileId);
   return {
     ...meta,
-    content: meta.mime ? "" : await loadBody(orgId, fileId),
+    content:
+      meta.records === undefined ? body : body.slice(0, DATASET_PREVIEW_CHARS),
   };
+}
+
+/** The whole body of a dump, for the one caller that queries it. */
+export async function readDataset(
+  orgId: string,
+  fileId: string,
+): Promise<string> {
+  return loadBody(orgId, fileId);
 }
 
 /** The body of a file that isn't text, for serving it back as what it is. */
@@ -126,6 +147,7 @@ interface FileInput {
   area: string;
   tags?: string[];
   sourceUrl?: string;
+  records?: number;
 }
 
 /**
@@ -149,6 +171,7 @@ function newMeta(input: FileInput, chars: number, mime?: string): FileMeta {
     chars,
     ...(mime ? { mime } : {}),
     ...(input.sourceUrl ? { sourceUrl: input.sourceUrl } : {}),
+    ...(input.records === undefined ? {} : { records: input.records }),
     createdAt: new Date().toISOString(),
   };
 }
@@ -187,6 +210,75 @@ export async function saveBinaryFile(
     newMeta(input, input.bytes.byteLength, input.mime),
     input.bytes,
   );
+}
+
+/**
+ * A dump arrives one page at a time and each page is meant to land beside the
+ * last, so the file is found by the name the agent gave it rather than by an
+ * id it would have to carry across calls.
+ */
+export async function findByTitle(
+  orgId: string,
+  title: string,
+): Promise<FileMeta | null> {
+  const wanted = title.trim().toLowerCase();
+  return (
+    (await readIndex(orgId)).find((m) => m.title.toLowerCase() === wanted) ??
+    null
+  );
+}
+
+/**
+ * Rows onto the end of a dump, without reading back what is already there —
+ * the whole point being that nothing ever holds the full thing except the
+ * query. The index is left alone: a dump arrives as a hundred pages, and
+ * rewriting it once per page would tell every open pane a hundred times.
+ */
+export async function appendDataset(
+  orgId: string,
+  fileId: string,
+  body: string,
+): Promise<void> {
+  await appendFile(bodyPath(orgId, fileId), body, "utf8");
+}
+
+/**
+ * The index catches up with the body once the dump stops growing, and records
+ * whether it stopped because the listing ended or because it ran into a limit.
+ * Both marks are rewritten every time, so finishing a dump that was cut short
+ * clears the warning the cut left on it.
+ */
+export async function closeDataset(
+  orgId: string,
+  fileId: string,
+  added: {
+    chars: number;
+    records: number;
+    cursor: string | null;
+    cursorArg: string | null;
+    partial: string;
+  },
+): Promise<FileMeta | null> {
+  const index = await readIndex(orgId);
+  const meta = index.find((m) => m.id === fileId);
+  if (!meta || meta.records === undefined) return null;
+
+  const updated: FileMeta = {
+    ...meta,
+    chars: meta.chars + added.chars,
+    records: meta.records + added.records,
+  };
+  if (added.partial) updated.partial = added.partial;
+  else delete updated.partial;
+  if (added.cursor && added.cursorArg) updated.cursorArg = added.cursorArg;
+  else delete updated.cursorArg;
+  if (added.cursor) updated.cursor = added.cursor;
+  else delete updated.cursor;
+  await writeIndex(
+    orgId,
+    index.map((m) => (m.id === fileId ? updated : m)),
+  );
+  return updated;
 }
 
 export async function deleteFile(orgId: string, fileId: string): Promise<void> {

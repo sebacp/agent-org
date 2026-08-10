@@ -10,6 +10,7 @@ import {
 } from "@/lib/run-types";
 import { parseSnapshot, text } from "@/server/org";
 import { executeRun } from "@/server/run";
+import { cancelRun } from "@/server/runs";
 
 export const config = {
   api: { bodyParser: { sizeLimit: "1mb" }, responseLimit: false },
@@ -75,8 +76,20 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
+  // Cortar comes in on its own request: the one streaming the corrida is busy
+  // streaming it, and may not even be open in the tab doing the asking.
+  if (req.method === "DELETE") {
+    const { orgId, threadId } = req.query;
+    if (typeof orgId !== "string" || typeof threadId !== "string") {
+      res.status(400).json({ error: "Falta la corrida." });
+      return;
+    }
+    res.status(200).json({ stopped: cancelRun(orgId, threadId) });
+    return;
+  }
+
   if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
+    res.setHeader("Allow", "POST, DELETE");
     res.status(405).json({ error: "Método no permitido." });
     return;
   }
@@ -118,7 +131,14 @@ export default async function handler(
     if (!controller.signal.aborted) {
       send({
         type: "error",
-        message: error instanceof Error ? error.message : "Falló la corrida.",
+        // Being cut short arrives here as the same kind of failure as anything
+        // else, and the browser's wording for it says nothing to anybody.
+        message:
+          error instanceof Error && error.name === "AbortError"
+            ? "Se cortó la corrida."
+            : error instanceof Error
+              ? error.message
+              : "Falló la corrida.",
       });
     }
   } finally {

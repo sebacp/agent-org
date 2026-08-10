@@ -8,9 +8,10 @@ const ENDPOINT = "https://api.deepseek.com/chat/completions";
 /**
  * Tool calls can chain; this stops a model that keeps searching forever. Real
  * work needs room: an API that makes you look up the operation before reading
- * it spends three rounds before the first number arrives.
+ * it spends three rounds before the first number arrives, and an analysis over
+ * several dumps spends one on each before it can ask them anything.
  */
-const MAX_TOOL_ROUNDS = 12;
+const MAX_TOOL_ROUNDS = 20;
 
 /**
  * Withholding the tools on the last round isn't enough on its own: a model
@@ -213,6 +214,10 @@ export async function chat(options: {
   ];
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
+    // A round is mostly spent inside the tools, and a dump can hold one open
+    // for minutes. Without this, cutting a corrida short waits for whatever it
+    // was in the middle of and then keeps going.
+    signal?.throwIfAborted();
     const last = round === MAX_TOOL_ROUNDS;
     if (onTool && last) messages.push({ role: "user", content: CLOSING });
     const { content, toolCalls, usage } = await call({
@@ -233,6 +238,7 @@ export async function chat(options: {
 
     messages.push({ role: "assistant", content, tool_calls: toolCalls });
     for (const toolCall of toolCalls) {
+      signal?.throwIfAborted();
       messages.push({
         role: "tool",
         tool_call_id: toolCall.id,

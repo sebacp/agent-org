@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { stopRun } from "@/lib/api";
 import { buildRunRequest } from "@/lib/run-request";
 import {
   MANUAL_ORIGIN,
@@ -83,6 +84,7 @@ function applyEvent(
           role: role(event.agentId),
           kind: "tool",
           text: event.summary,
+          ...(event.source ? { source: event.source } : {}),
         },
       ]);
       rootTurned(event.agentId);
@@ -169,6 +171,21 @@ export function useOrgRun(
     setWatching(false);
     setRunning(false);
   }, []);
+
+  /**
+   * Cortar, which is a different thing from `stop`: the corrida is the
+   * server's, so it is asked to end rather than merely stopped being read.
+   * Letting go here too would only hide it — it would keep running, keep
+   * spending, and reappear on the riel. The stream closes on its own once the
+   * server lets go of it, so this waits for that instead of faking it.
+   */
+  const cut = useCallback(async () => {
+    if (!threadId) return;
+    // Nothing there to stop means the corrida already ended and this tab is
+    // holding a stream nobody is writing to, so it lets go after all.
+    const stopped = await stopRun(orgId, threadId).catch(() => false);
+    if (!stopped) stop();
+  }, [orgId, stop, threadId]);
 
   const clear = useCallback(() => {
     stop();
@@ -403,6 +420,7 @@ export function useOrgRun(
     error,
     start,
     stop,
+    cut,
     clear,
     show,
     watch,

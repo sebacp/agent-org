@@ -49,6 +49,21 @@ export async function fetchActiveRuns(orgId: string): Promise<ActiveRun[]> {
   return runs;
 }
 
+/**
+ * Stops it wherever it is running, not just wherever it is being read. False
+ * when there was nothing running under that id any more.
+ */
+export async function stopRun(
+  orgId: string,
+  threadId: string,
+): Promise<boolean> {
+  const { stopped } = await json<{ stopped: boolean }>(
+    `/api/run?orgId=${encodeURIComponent(orgId)}&threadId=${encodeURIComponent(threadId)}`,
+    { method: "DELETE" },
+  );
+  return stopped;
+}
+
 export async function removeThread(orgId: string, id: string): Promise<void> {
   await json(
     `/api/threads?orgId=${encodeURIComponent(orgId)}&id=${encodeURIComponent(id)}`,

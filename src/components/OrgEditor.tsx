@@ -6,8 +6,8 @@ import StepChart from "@/components/wizard/StepChart";
 import StepCompany from "@/components/wizard/StepCompany";
 import StepSources from "@/components/wizard/StepSources";
 import StepTeam from "@/components/wizard/StepTeam";
-import { useAutosave } from "@/hooks/useAutosave";
 import { useOrgGraph } from "@/hooks/useOrgGraph";
+import { useOrgSave } from "@/hooks/useOrgSave";
 import { useSources } from "@/hooks/useSources";
 import { DepartmentsProvider } from "@/lib/department-context";
 import { SourcesProvider } from "@/lib/source-context";
@@ -16,7 +16,21 @@ export default function OrgEditor({ orgId }: { orgId: string }) {
   const router = useRouter();
   const org = useOrgGraph(orgId);
   const sources = useSources(orgId);
-  useAutosave(orgId, org.company, org.departments, org.nodes, org.edges);
+  const { dirty, save } = useOrgSave(
+    orgId,
+    org.company,
+    org.departments,
+    org.nodes,
+    org.edges,
+  );
+
+  // Leaving is the one way out that isn't the button, so it has to ask.
+  const leave = () => {
+    if (dirty && !window.confirm("Hay cambios sin guardar. ¿Salir igual?")) {
+      return;
+    }
+    void router.push("/");
+  };
 
   const openDepartment = org.openAgent
     ? (org.departments.find((d) => d.id === org.openAgent?.data.department) ??
@@ -31,9 +45,10 @@ export default function OrgEditor({ orgId }: { orgId: string }) {
             company={org.company.name}
             step={org.step}
             unlocked={Boolean(org.company.name.trim())}
+            dirty={dirty}
             onGo={org.goToStep}
-            onLibrary={() => void router.push("/")}
-            onDone={() => void router.push(`/org/${orgId}`)}
+            onLibrary={leave}
+            onSave={save}
           />
 
           <main className="min-h-0 flex-1">
@@ -78,6 +93,9 @@ export default function OrgEditor({ orgId }: { orgId: string }) {
                 onEdgesChange={org.onEdgesChange}
                 onConnect={org.onConnect}
                 onOpenAgent={org.setOpenAgentId}
+                onCreateReport={(managerId, position) =>
+                  org.setOpenAgentId(org.addReport(managerId, position))
+                }
                 onAutoLayout={org.runAutoLayout}
                 onExport={org.exportOrg}
                 onImport={org.importOrg}

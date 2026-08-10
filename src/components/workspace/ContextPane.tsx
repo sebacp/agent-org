@@ -12,7 +12,7 @@ import Markdown from "@/components/ui/Markdown";
 import AutomationBoard from "@/components/workspace/AutomationBoard";
 import TaskBoard from "@/components/workspace/TaskBoard";
 import type { Automation, AutomationDraft } from "@/lib/automation-types";
-import { isImage, type FileMeta } from "@/lib/file-types";
+import { isDataset, isImage, type FileMeta } from "@/lib/file-types";
 import type { PendingTask, TaskAttachment } from "@/lib/task-types";
 import type { AgentNode, OrgEdge } from "@/lib/types";
 import {
@@ -66,6 +66,7 @@ const EXT: Record<string, IconName> = {
  */
 function fileIcon(file: FileMeta): IconName {
   if (isImage(file)) return "image";
+  if (isDataset(file)) return "table";
   const ext = file.title.toLowerCase().split(".").pop() ?? "";
   return EXT[ext] ?? (file.mime ? "attachment" : "doc");
 }
@@ -320,6 +321,11 @@ export default function ContextPane({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] text-ink">
                         {file.title}
+                        {file.partial ? (
+                          <span className="ml-1.5 align-[1px] text-[10px] tracking-wide text-amber-700 uppercase">
+                            incompleto
+                          </span>
+                        ) : null}
                       </span>
                       <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-faint">
                         {/* The face of whoever wrote it. What you uploaded

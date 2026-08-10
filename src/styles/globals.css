@@ -71,32 +71,49 @@ body {
   z-index: 5;
 }
 
+/* Every line on the chart gets pulled from one of these, and a dot the size of
+   the dot is a worse target than the pointer looking for it. The box is what
+   gets grabbed; the dot is only what gets seen. */
 .react-flow__handle {
-  width: 8px;
-  height: 8px;
+  width: 30px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.react-flow__handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 9px;
+  height: 9px;
   border-radius: 999px;
   background: var(--color-panel);
   border: 1px solid #c4c1b8;
+  /* Kept out of the box's own transform, which React Flow uses to place it. */
+  transform: translate(-50%, -50%);
   transition:
     transform 120ms ease,
     border-color 120ms ease,
     background 120ms ease;
 }
 
-.react-flow__handle:hover,
-.react-flow__handle.connectingfrom,
-.react-flow__handle.connectingto {
-  transform: scale(1.4);
+.react-flow__handle:hover::after,
+.react-flow__handle.connectingfrom::after,
+.react-flow__handle.connectingto::after {
+  transform: translate(-50%, -50%) scale(1.6);
   border-color: var(--color-ink);
   background: var(--color-ink);
 }
 
 .react-flow__handle-top {
-  top: -4px;
+  top: -5px;
 }
 
 .react-flow__handle-bottom {
-  bottom: -4px;
+  bottom: -5px;
 }
 
 .react-flow__controls {

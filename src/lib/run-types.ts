@@ -85,10 +85,27 @@ export interface ActiveRun {
   startedAt: string;
 }
 
+/**
+ * The connected server a step went out to. Carried along rather than looked up
+ * by id so a trace saved months ago still says whose data it was, even if the
+ * source has since been renamed or disconnected.
+ */
+export interface SourceRef {
+  label: string;
+  /** Where its logo comes from; empty on a `stdio` source, which has none. */
+  url: string;
+}
+
 export type RunEvent =
   | { type: "status"; agentId: string; status: AgentStatus }
   | { type: "delegate"; agentId: string; toId: string; task: string }
-  | { type: "tool"; agentId: string; summary: string; fileId?: string }
+  | {
+      type: "tool";
+      agentId: string;
+      summary: string;
+      fileId?: string;
+      source?: SourceRef;
+    }
   | { type: "result"; agentId: string; text: string }
   | { type: "usage"; agentId: string; usage: TokenUsage; cost: number }
   /**
@@ -108,6 +125,8 @@ export interface ThreadStep {
   role: string;
   kind: "delegate" | "tool" | "result" | "failed";
   text: string;
+  /** Only on a step that went out to a connected server. */
+  source?: SourceRef;
 }
 
 /** One exchange with everything the corrida behind it left. */
