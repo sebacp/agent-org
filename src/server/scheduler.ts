@@ -77,6 +77,9 @@ export async function runAutomation(
         threadId,
         task: automation.task,
         origin: { kind: "automation", label: automation.name },
+        // Every run of an automation opens its own hilo, so there is never
+        // anything before it.
+        history: [],
       },
       () => undefined,
       controller.signal,

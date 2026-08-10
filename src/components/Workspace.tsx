@@ -53,14 +53,12 @@ export default function Workspace({ orgId }: { orgId: string }) {
   const [paneOpen, setPaneOpen] = useState(false);
   /** Zero until the divider is dragged, and a third of the window until then. */
   const [chatWidth, setChatWidth] = useState(0);
-  const [threadId, setThreadId] = useState<string | null>(null);
   const [openFileId, setOpenFileId] = useState<string | null>(null);
 
   // What the agents file or leave pending arrives on its own while the run is
   // still going; the thread itself is only written once it ends.
   const start = useCallback(
     async (task: string, fromId?: string, origin?: RunOrigin) => {
-      setThreadId(null);
       await run.start(task, fromId, origin);
       await threads.refresh();
     },
@@ -105,23 +103,11 @@ export default function Workspace({ orgId }: { orgId: string }) {
     [start],
   );
 
-  const openThread = useCallback(
-    (thread: Thread) => {
-      setThreadId(thread.id);
-      run.show(thread);
-    },
-    [run],
-  );
+  const openThread = useCallback((thread: Thread) => run.show(thread), [run]);
 
   // The same statuses the org chart paints itself with, so following a corrida
   // and watching it move across the chart are one thing.
-  const openRun = useCallback(
-    (active: ActiveRun) => {
-      setThreadId(active.threadId);
-      run.watch(active);
-    },
-    [run],
-  );
+  const openRun = useCallback((active: ActiveRun) => run.watch(active), [run]);
 
   // An automation's corrida happens on the server, so its hilo can be one this
   // tab never listed.
@@ -135,10 +121,7 @@ export default function Workspace({ orgId }: { orgId: string }) {
     [openThread, threads],
   );
 
-  const newThread = useCallback(() => {
-    setThreadId(null);
-    run.clear();
-  }, [run]);
+  const newThread = useCallback(() => run.clear(), [run]);
 
   // Pointer events keep tracking outside the handle, which a drag needs once
   // the cursor runs ahead of the divider.
@@ -197,7 +180,7 @@ export default function Workspace({ orgId }: { orgId: string }) {
               <ThreadRail
                 companyName={org.company.name}
                 threads={threads.threads}
-                activeId={threadId}
+                activeId={run.threadId}
                 runs={active.runs}
                 fileCount={files.files.length}
                 filesOpen={tab === "files"}
@@ -277,6 +260,7 @@ export default function Workspace({ orgId }: { orgId: string }) {
 
               <Conversation
                 companyName={org.company.name}
+                turns={run.turns}
                 task={run.task}
                 trace={run.trace}
                 usage={run.usage}

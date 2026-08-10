@@ -6,7 +6,9 @@ import {
   type AgentStatus,
   type RunEvent,
   type RunOrigin,
+  type Thread,
   type ThreadStep,
+  type Turn,
 } from "@/lib/run-types";
 import type {
   AgentNode,
@@ -141,6 +143,10 @@ export function useOrgRun(
   const [running, setRunning] = useState(false);
   /** The corrida belongs to the server, so this tab reads it and nothing more. */
   const [watching, setWatching] = useState(false);
+  /** The open hilo, which the next pedido continues instead of replacing. */
+  const [threadId, setThreadId] = useState<string | null>(null);
+  /** Everything this hilo already asked and got answered, oldest first. */
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [statuses, setStatuses] = useState<Record<string, AgentStatus>>({});
   const [results, setResults] = useState<Record<string, string>>({});
   const [trace, setTrace] = useState<ThreadStep[]>([]);
@@ -172,6 +178,8 @@ export function useOrgRun(
     setSpend({});
     setUsage(NO_USAGE);
     setLive(NO_LIVE);
+    setThreadId(null);
+    setTurns([]);
     setTask(null);
     setAnswer(null);
     setError(null);
@@ -179,8 +187,27 @@ export function useOrgRun(
 
   const start = useCallback(
     async (prompt: string, fromId?: string, origin: RunOrigin = MANUAL_ORIGIN) => {
+      // A pedido you type continues whatever hilo is open. A retomada doesn't:
+      // it starts at whoever got stuck, with an encargo written to stand alone.
+      const open = origin.kind === "manual" ? threadId : null;
+      const kept = open ? turns : [];
+      // The exchange on screen finished a moment ago, so it is not in `turns`
+      // yet — and it is the one a follow-up is most likely about.
+      const done =
+        open && task !== null && answer !== null
+          ? [...kept, { task, answer, steps: trace, usage }]
+          : kept;
+
       const request = buildRunRequest(
-        { orgId, threadId: crypto.randomUUID(), origin },
+        {
+          orgId,
+          threadId: open ?? crypto.randomUUID(),
+          origin,
+          history: done.map((turn) => ({
+            task: turn.task,
+            answer: turn.answer,
+          })),
+        },
         prompt,
         company,
         departments,
@@ -204,6 +231,8 @@ export function useOrgRun(
       setSpend({});
       setUsage(NO_USAGE);
       setLive(NO_LIVE);
+      setThreadId(request.threadId);
+      setTurns(done);
       setTask(prompt);
       setAnswer(null);
       setError(null);
@@ -262,7 +291,20 @@ export function useOrgRun(
         setRunning(false);
       }
     },
-    [company, departments, edges, nodes, orgId, stop],
+    [
+      answer,
+      company,
+      departments,
+      edges,
+      nodes,
+      orgId,
+      stop,
+      task,
+      threadId,
+      trace,
+      turns,
+      usage,
+    ],
   );
 
   /**
@@ -279,6 +321,10 @@ export function useOrgRun(
       setSpend({});
       setUsage(NO_USAGE);
       setLive(NO_LIVE);
+      setThreadId(run.threadId);
+      // Whatever the hilo holds already is on disk, and a corrida in progress
+      // has no way to hand it over; opening the hilo once it ends brings it.
+      setTurns([]);
       setTask(run.task);
       setAnswer(null);
       setError(null);
@@ -321,22 +367,21 @@ export function useOrgRun(
   );
 
   const show = useCallback(
-    (thread: {
-      task: string;
-      answer: string;
-      steps: ThreadStep[];
-      usage?: RunUsage;
-    }) => {
+    (thread: Thread) => {
       stop();
       setStatuses({});
       setResults({});
-      setTrace(thread.steps);
-      // A replayed thread only kept its total; the per-agent split is gone.
+      // Every exchange keeps its own trace, so nothing is happening apart from
+      // them: the live slots stay empty until the next pedido fills them.
+      setTrace([]);
+      // A replayed thread only kept its totals; the per-agent split is gone.
       setSpend({});
-      setUsage(thread.usage ?? NO_USAGE);
+      setUsage(NO_USAGE);
       setLive(NO_LIVE);
-      setTask(thread.task);
-      setAnswer(thread.answer);
+      setThreadId(thread.id);
+      setTurns(thread.turns);
+      setTask(null);
+      setAnswer(null);
       setError(null);
     },
     [stop],
@@ -351,6 +396,8 @@ export function useOrgRun(
     spend,
     usage,
     live,
+    threadId,
+    turns,
     task,
     answer,
     error,

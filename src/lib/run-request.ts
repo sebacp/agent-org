@@ -1,5 +1,10 @@
 import { ROOT_DEPARTMENT } from "@/lib/roles";
-import type { OrgSnapshot, RunOrigin, RunRequest } from "@/lib/run-types";
+import type {
+  Exchange,
+  OrgSnapshot,
+  RunOrigin,
+  RunRequest,
+} from "@/lib/run-types";
 import type {
   AgentNode,
   CompanyProfile,
@@ -55,7 +60,12 @@ export function buildOrgSnapshot(
 }
 
 export function buildRunRequest(
-  ids: { orgId: string; threadId: string; origin: RunOrigin },
+  ids: {
+    orgId: string;
+    threadId: string;
+    origin: RunOrigin;
+    history: Exchange[];
+  },
   task: string,
   company: CompanyProfile,
   departments: DepartmentDef[],

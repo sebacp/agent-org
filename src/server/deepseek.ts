@@ -1,4 +1,5 @@
 import { modelThinks, type ModelId } from "@/lib/models";
+import type { Exchange } from "@/lib/run-types";
 import type { TokenUsage } from "@/lib/usage";
 import type { ToolSchema } from "@/server/tools";
 
@@ -177,6 +178,8 @@ export async function chat(options: {
   model: ModelId;
   system: string;
   user: string;
+  /** Earlier exchanges of the same hilo, oldest first. */
+  history?: Exchange[];
   tools?: ToolSchema[];
   onTool?: (call: ToolCall) => Promise<string>;
   onUsage?: (usage: TokenUsage) => void;
@@ -189,6 +192,7 @@ export async function chat(options: {
     model,
     system,
     user,
+    history,
     tools,
     onTool,
     onUsage,
@@ -198,6 +202,13 @@ export async function chat(options: {
   } = options;
   const messages: ChatMessage[] = [
     { role: "system", content: system },
+    // Replayed as the turns they were rather than summarised into the pedido:
+    // the prefix stays byte for byte what it was last time, which is what keeps
+    // the whole hilo inside DeepSeek's cache.
+    ...(history ?? []).flatMap((turn): ChatMessage[] => [
+      { role: "user", content: turn.task },
+      { role: "assistant", content: turn.answer },
+    ]),
     { role: "user", content: user },
   ];
 

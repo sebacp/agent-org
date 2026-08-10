@@ -3,6 +3,7 @@ import { isSafeId } from "@/lib/id";
 import {
   MANUAL_ORIGIN,
   RUN_LIMITS,
+  type Exchange,
   type RunEvent,
   type RunOrigin,
   type RunRequest,
@@ -26,6 +27,25 @@ function parseOrigin(raw: unknown): RunOrigin {
   return { kind: "task", label: text(origin.label, 120) };
 }
 
+/**
+ * The hilo as the tab has it. It is the client's copy of something the server
+ * already wrote, so it is trimmed like any other input, and a half exchange —
+ * a pedido that errored out, say — is dropped rather than left hanging.
+ */
+function parseHistory(raw: unknown): Exchange[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      const turn = (item ?? {}) as Record<string, unknown>;
+      return {
+        task: text(turn.task, RUN_LIMITS.maxTaskChars).trim(),
+        answer: text(turn.answer, RUN_LIMITS.maxAnswerChars).trim(),
+      };
+    })
+    .filter((turn) => turn.task && turn.answer)
+    .slice(-RUN_LIMITS.maxHistory);
+}
+
 /** Throws with a message meant for the user; anything else is a 500. */
 function parseRequest(body: unknown): RunRequest {
   const raw = (body ?? {}) as Record<string, unknown>;
@@ -47,6 +67,7 @@ function parseRequest(body: unknown): RunRequest {
     threadId,
     task,
     origin: parseOrigin(raw.origin),
+    history: parseHistory(raw.history),
   };
 }
 

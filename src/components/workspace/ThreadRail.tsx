@@ -262,8 +262,10 @@ export default function ThreadRail({
                 {[
                   ORIGIN[thread.origin?.kind ?? "manual"],
                   whenLabel(thread.createdAt),
-                  thread.steps.length > 0
-                    ? `${thread.steps.length} pasos`
+                  // How long the conversation got, which only says something
+                  // once it went past the pedido that opened it.
+                  thread.turns.length > 1
+                    ? `${thread.turns.length} pedidos`
                     : null,
                 ]
                   .filter(Boolean)

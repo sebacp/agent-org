@@ -3,7 +3,7 @@ import { addUsage, NO_USAGE, type RunUsage } from "@/lib/usage";
 import { publish } from "@/server/bus";
 import { runOrg } from "@/server/orchestrator";
 import { beginRun, endRun, recordEvent } from "@/server/runs";
-import { saveThread, threadTitle } from "@/server/threads";
+import { appendTurn, threadTitle } from "@/server/threads";
 
 export interface RunOutcome {
   answer: string;
@@ -75,15 +75,11 @@ export async function executeRun(
     const answer = await runOrg(request, send, signal);
     send({ type: "done", text: answer });
 
-    await saveThread(request.orgId, {
-      id: request.threadId,
-      title,
-      task: request.task,
-      answer,
-      origin: request.origin,
-      steps,
-      usage,
-    });
+    await appendTurn(
+      request.orgId,
+      { id: request.threadId, title, origin: request.origin },
+      { task: request.task, answer, steps, usage },
+    );
     publish(request.orgId, "threads");
 
     return { answer, steps, usage };

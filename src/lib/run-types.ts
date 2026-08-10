@@ -53,12 +53,24 @@ export interface RunOrigin {
 
 export const MANUAL_ORIGIN: RunOrigin = { kind: "manual", label: "" };
 
+/** A pedido and what the company answered: what a hilo is made of. */
+export interface Exchange {
+  task: string;
+  answer: string;
+}
+
 export interface RunRequest extends OrgSnapshot {
   /** Which company's file library the agents get to read and write. */
   orgId: string;
   threadId: string;
   task: string;
   origin: RunOrigin;
+  /**
+   * What this hilo already asked and got answered, oldest first. Only the root
+   * sees it: it is the one you are talking to, and a delegate gets an encargo
+   * that has to stand on its own anyway.
+   */
+  history: Exchange[];
 }
 
 /** A corrida happening right now, on this server, for anyone who asks. */
@@ -98,16 +110,20 @@ export interface ThreadStep {
   text: string;
 }
 
+/** One exchange with everything the corrida behind it left. */
+export interface Turn extends Exchange {
+  steps: ThreadStep[];
+  /** Absent on turns saved before the run started counting tokens. */
+  usage?: RunUsage;
+}
+
 export interface Thread {
   id: string;
+  /** From the pedido that opened it; a follow-up doesn't rename the hilo. */
   title: string;
-  task: string;
-  answer: string;
   /** Absent on threads saved before corridas recorded where they came from. */
   origin?: RunOrigin;
-  steps: ThreadStep[];
-  /** Absent on threads saved before the run started counting tokens. */
-  usage?: RunUsage;
+  turns: Turn[];
   createdAt: string;
 }
 
@@ -116,4 +132,7 @@ export const RUN_LIMITS = {
   maxDepth: 4,
   maxTaskChars: 4000,
   maxInstructionChars: 8000,
+  /** How far back a follow-up remembers; older exchanges drop off the front. */
+  maxHistory: 10,
+  maxAnswerChars: 6000,
 } as const;

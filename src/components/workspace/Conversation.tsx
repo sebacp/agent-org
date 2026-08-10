@@ -3,10 +3,11 @@ import Avatar from "@/components/ui/Avatar";
 import Button from "@/components/ui/Button";
 import Markdown from "@/components/ui/Markdown";
 import type { LiveText } from "@/hooks/useOrgRun";
-import type { ThreadStep } from "@/lib/run-types";
+import type { ThreadStep, Turn } from "@/lib/run-types";
 import {
   formatCost,
   formatTokens,
+  NO_USAGE,
   totalTokens,
   type RunUsage,
 } from "@/lib/usage";
@@ -14,8 +15,17 @@ import {
 /** Reasoning runs long and only its end is news; the rest is scrollback. */
 const TAIL = 400;
 
+/** What only the exchange happening right now has. */
+interface Live {
+  thinking: string;
+  running: boolean;
+  error: string | null;
+}
+
 interface ConversationProps {
   companyName: string;
+  /** The exchanges of this hilo that already closed, oldest first. */
+  turns: Turn[];
   task: string | null;
   trace: ThreadStep[];
   usage: RunUsage;
@@ -93,8 +103,117 @@ function TraceLine({
   );
 }
 
+/**
+ * One pedido and everything it set off. A finished one folds its trace away —
+ * what it produced is the answer, and the hilo above it has to stay readable —
+ * while the one running keeps it open, because that is where it currently is.
+ */
+function Exchange({
+  companyName,
+  turn,
+  live,
+}: {
+  companyName: string;
+  turn: Turn;
+  live?: Live;
+}) {
+  const [open, setOpen] = useState(false);
+  const steps = turn.steps;
+  const usage = turn.usage ?? NO_USAGE;
+  const tokens = totalTokens(usage);
+  const prompt = usage.cached + usage.input;
+  const cacheHit = prompt > 0 ? Math.round((usage.cached / prompt) * 100) : 0;
+  const thinking = live?.thinking ?? "";
+
+  return (
+    <div>
+      <p className="text-[16px] leading-relaxed whitespace-pre-line text-ink">
+        {turn.task}
+      </p>
+
+      {!live && steps.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="mt-3 text-[12px] text-faint transition-colors hover:text-ink"
+        >
+          {open
+            ? "Ocultar los pasos"
+            : steps.length === 1
+              ? "Ver el paso"
+              : `Ver los ${steps.length} pasos`}
+        </button>
+      ) : null}
+
+      {(live || open) && (steps.length > 0 || thinking) ? (
+        <div
+          className={`${
+            live ? "mt-7" : "mt-3"
+          } flex flex-col gap-1.5 border-l border-hairline pl-4`}
+        >
+          {steps.map((step, index) => (
+            <TraceLine
+              key={`${step.agentId}-${index}`}
+              step={step}
+              // Once it is reasoning or writing below, the last line is no
+              // longer where the corrida is.
+              active={
+                live?.running &&
+                !thinking &&
+                !turn.answer &&
+                index === steps.length - 1
+              }
+            />
+          ))}
+          {/* The last line of the trace until something replaces it: what it is
+            reasoning, cut to its end so a long deliberation doesn't push the
+            rest of the corrida off screen. */}
+          {thinking ? (
+            <p className="px-1 text-[12px] leading-relaxed whitespace-pre-line text-faint">
+              {thinking.length > TAIL ? `…${thinking.slice(-TAIL)}` : thinking}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {live?.running && steps.length === 0 && !thinking && !turn.answer ? (
+        <p className="mt-7 text-[13px] text-faint">
+          El CEO está repartiendo el encargo…
+        </p>
+      ) : null}
+
+      {live?.error ? (
+        <p className="mt-7 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] leading-relaxed text-red-700">
+          {live.error}
+        </p>
+      ) : null}
+
+      {/* The same card whether it is still being written or finished: the text
+        just stops growing. */}
+      {turn.answer ? (
+        <div className="mt-7 rounded-xl border border-hairline bg-panel px-5 py-4">
+          <p className="text-[11px] tracking-wide text-faint uppercase">
+            {companyName || "La empresa"}
+          </p>
+          <Markdown className="mt-2 text-[14px] text-ink">
+            {turn.answer}
+          </Markdown>
+        </div>
+      ) : null}
+
+      {tokens > 0 ? (
+        <p className="mt-3 px-1 text-[11px] text-faint">
+          {formatTokens(tokens)} tokens · {formatCost(usage.cost)}
+          {cacheHit > 0 ? ` · ${cacheHit}% desde caché` : ""}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export default function Conversation({
   companyName,
+  turns,
   task,
   trace,
   usage,
@@ -108,16 +227,13 @@ export default function Conversation({
 }: ConversationProps) {
   const [draft, setDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
-  const tokens = totalTokens(usage);
-  const prompt = usage.cached + usage.input;
-  const cacheHit = prompt > 0 ? Math.round((usage.cached / prompt) * 100) : 0;
   // Once it starts writing it has stopped reasoning, and the answer says more.
   const thinking = live.answer ? "" : live.thinking;
-  const text = answer ?? (live.answer || null);
+  const text = answer ?? live.answer;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [trace.length, thinking.length, text, error]);
+  }, [turns.length, trace.length, thinking.length, text, error]);
 
   const submit = () => {
     const text = draft.trim();
@@ -132,7 +248,7 @@ export default function Conversation({
     <section className="flex min-w-0 flex-1 flex-col bg-canvas lg:w-[var(--chat)] lg:flex-none">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[680px] px-8 py-10">
-          {task === null ? (
+          {turns.length === 0 && task === null ? (
             <div className="pt-16 text-center">
               <h1 className="text-[24px] leading-tight font-semibold tracking-tight text-ink">
                 ¿Qué le pedís a {companyName || "la empresa"}?
@@ -143,70 +259,22 @@ export default function Conversation({
               </p>
             </div>
           ) : (
-            <>
-              <p className="text-[16px] leading-relaxed whitespace-pre-line text-ink">
-                {task}
-              </p>
-
-              {trace.length > 0 || thinking ? (
-                <div className="mt-7 flex flex-col gap-1.5 border-l border-hairline pl-4">
-                  {trace.map((step, index) => (
-                    <TraceLine
-                      key={`${step.agentId}-${index}`}
-                      step={step}
-                      // Once it is reasoning or writing below, the last line is
-                      // no longer where the corrida is.
-                      active={
-                        running &&
-                        !thinking &&
-                        !text &&
-                        index === trace.length - 1
-                      }
-                    />
-                  ))}
-                  {/* The last line of the trace until something replaces it:
-                    what it is reasoning, cut to its end so a long deliberation
-                    doesn't push the rest of the corrida off screen. */}
-                  {thinking ? (
-                    <p className="px-1 text-[12px] leading-relaxed whitespace-pre-line text-faint">
-                      {thinking.length > TAIL
-                        ? `…${thinking.slice(-TAIL)}`
-                        : thinking}
-                    </p>
-                  ) : null}
-                </div>
+            <div className="flex flex-col gap-12">
+              {turns.map((turn, index) => (
+                <Exchange
+                  key={index}
+                  companyName={companyName}
+                  turn={turn}
+                />
+              ))}
+              {task !== null ? (
+                <Exchange
+                  companyName={companyName}
+                  turn={{ task, answer: text, steps: trace, usage }}
+                  live={{ thinking, running, error }}
+                />
               ) : null}
-
-              {running && trace.length === 0 && !thinking && !text ? (
-                <p className="mt-7 text-[13px] text-faint">
-                  El CEO está repartiendo el encargo…
-                </p>
-              ) : null}
-
-              {error ? (
-                <p className="mt-7 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] leading-relaxed text-red-700">
-                  {error}
-                </p>
-              ) : null}
-
-              {/* The same card whether it is still being written or finished:
-                the text just stops growing. */}
-              {text ? (
-                <div className="mt-7 rounded-xl border border-hairline bg-panel px-5 py-4">
-                  <p className="text-[11px] tracking-wide text-faint uppercase">
-                    {companyName || "La empresa"}
-                  </p>
-                  <Markdown className="mt-2 text-[14px] text-ink">{text}</Markdown>
-                </div>
-              ) : null}
-
-              {tokens > 0 ? (
-                <p className="mt-3 px-1 text-[11px] text-faint">
-                  {formatTokens(tokens)} tokens · {formatCost(usage.cost)}
-                  {cacheHit > 0 ? ` · ${cacheHit}% desde caché` : ""}
-                </p>
-              ) : null}
-            </>
+            </div>
           )}
           <div ref={endRef} />
         </div>
@@ -225,7 +293,11 @@ export default function Conversation({
                   submit();
                 }
               }}
-              placeholder="Armá el plan para entrar al mercado mexicano el próximo trimestre."
+              placeholder={
+                turns.length > 0 || task !== null
+                  ? "Seguí sobre lo mismo, o pedí otra cosa."
+                  : "Armá el plan para entrar al mercado mexicano el próximo trimestre."
+              }
               className="min-w-0 flex-1 resize-none bg-transparent text-[14px] leading-relaxed text-ink outline-none placeholder:text-faint"
             />
             {running && watching ? (

@@ -146,6 +146,9 @@ export async function runOrg(
     // Only the root writes to the conversation, so it is the only one worth
     // watching live; the rest land as steps when they finish.
     const live = agentId === request.rootId;
+    // What was already asked and answered in this hilo, and only for the one
+    // who was asked it: a delegate gets an encargo written to stand on its own.
+    const history = live ? request.history : undefined;
     const onThinking = live
       ? (text: string) => emit({ type: "stream", agentId, phase: "thinking", text })
       : undefined;
@@ -161,6 +164,7 @@ export async function runOrg(
           model: agent.model,
           system,
           user: leafPrompt(task),
+          history,
           tools: await tools(),
           onTool,
           onUsage,
@@ -182,6 +186,7 @@ export async function runOrg(
         model: agent.model,
         system,
         user: splitPrompt(task, reports, request, access),
+        history,
         onUsage,
         onThinking,
         signal,
@@ -239,6 +244,7 @@ export async function runOrg(
           usable,
           answers.filter((a) => !a.text).map((a) => a.agent.role),
         ),
+        history,
         tools: await tools(),
         onTool,
         onUsage,
