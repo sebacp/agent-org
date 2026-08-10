@@ -2,6 +2,9 @@
 
 @theme {
   --color-canvas: #eceae4;
+  /** The org chart, a step under the canvas so it doesn't read as more chat. */
+  --color-board: #e3e0d6;
+  --color-board-dot: #cecabf;
   --color-chrome: #f7f6f2;
   --color-panel: #ffffff;
   --color-raised: #ecebe4;

@@ -12,6 +12,12 @@ export interface PendingTask {
   title: string;
   /** What the agent could not get on its own. */
   need: string;
+  /**
+   * What the agent had been asked to do when it got stuck. Retomar starts a
+   * fresh corrida, so without this the answer arrives with nothing to apply it
+   * to. Absent on tasks noted before it was recorded.
+   */
+  assignment?: string;
   /** What you replied when you unblocked it. */
   answer: string;
   /** Files you handed over with the answer, for the agent to read. */

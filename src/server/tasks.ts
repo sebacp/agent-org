@@ -36,6 +36,7 @@ export async function createTask(
   input: {
     title: string;
     need: string;
+    assignment: string;
     agentId: string;
     author: string;
     area: string;
@@ -46,6 +47,7 @@ export async function createTask(
     id: newId("p"),
     title: input.title.trim().slice(0, 160) || "Sin título",
     need: input.need.trim().slice(0, 2000),
+    assignment: input.assignment.trim().slice(0, 2000),
     answer: "",
     attachments: [],
     agentId: input.agentId,

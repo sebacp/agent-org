@@ -18,6 +18,8 @@ interface ConversationProps {
   answer: string | null;
   error: string | null;
   running: boolean;
+  /** Somebody else's corrida: this tab reads it and can't cut it short. */
+  watching: boolean;
   onStart: (task: string) => void;
   onStop: () => void;
 }
@@ -84,6 +86,7 @@ export default function Conversation({
   answer,
   error,
   running,
+  watching,
   onStart,
   onStop,
 }: ConversationProps) {
@@ -185,7 +188,9 @@ export default function Conversation({
               placeholder="Armá el plan para entrar al mercado mexicano el próximo trimestre."
               className="min-w-0 flex-1 resize-none bg-transparent text-[14px] leading-relaxed text-ink outline-none placeholder:text-faint"
             />
-            {running ? (
+            {running && watching ? (
+              <Button onClick={onStop}>Dejar de seguir</Button>
+            ) : running ? (
               <Button variant="danger" onClick={onStop}>
                 Cortar
               </Button>

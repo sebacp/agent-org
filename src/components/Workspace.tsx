@@ -6,6 +6,8 @@ import ContextPane, {
 import Conversation from "@/components/workspace/Conversation";
 import FileViewer from "@/components/workspace/FileViewer";
 import ThreadRail from "@/components/workspace/ThreadRail";
+import { useActiveRuns } from "@/hooks/useActiveRuns";
+import { useAutomations } from "@/hooks/useAutomations";
 import { useAutosave } from "@/hooks/useAutosave";
 import { useFiles } from "@/hooks/useFiles";
 import { useOrgEvents } from "@/hooks/useOrgEvents";
@@ -17,7 +19,7 @@ import { useThreads } from "@/hooks/useThreads";
 import { DepartmentsProvider } from "@/lib/department-context";
 import { RunStatusProvider } from "@/lib/run-context";
 import { SourcesProvider } from "@/lib/source-context";
-import type { Thread } from "@/lib/run-types";
+import type { ActiveRun, RunOrigin, Thread } from "@/lib/run-types";
 import type { PendingTask } from "@/lib/task-types";
 
 export default function Workspace({ orgId }: { orgId: string }) {
@@ -35,10 +37,16 @@ export default function Workspace({ orgId }: { orgId: string }) {
   const files = useFiles(orgId);
   const tasks = useTasks(orgId);
   const sources = useSources(orgId);
+  const automations = useAutomations(orgId);
+  const active = useActiveRuns(orgId);
 
   useOrgEvents(orgId, (topic) => {
     if (topic === "files") void files.refresh();
-    else void tasks.refresh();
+    else if (topic === "tasks") void tasks.refresh();
+    else if (topic === "automations") void automations.refresh();
+    else if (topic === "runs") void active.refresh();
+    // A corrida that started on the server, so the hilo is new to this tab.
+    else void threads.refresh();
   });
 
   const [tab, setTab] = useState<ContextTab>("org");
@@ -51,9 +59,9 @@ export default function Workspace({ orgId }: { orgId: string }) {
   // What the agents file or leave pending arrives on its own while the run is
   // still going; the thread itself is only written once it ends.
   const start = useCallback(
-    async (task: string, fromId?: string) => {
+    async (task: string, fromId?: string, origin?: RunOrigin) => {
       setThreadId(null);
-      await run.start(task, fromId);
+      await run.start(task, fromId, origin);
       await threads.refresh();
     },
     [run, threads],
@@ -74,8 +82,13 @@ export default function Workspace({ orgId }: { orgId: string }) {
       void start(
         [
           `Retomá el pendiente ${task.id}: ${task.title}`,
-          `Faltaba esto:\n${task.need}`,
-          task.answer ? `Ya lo tenés:\n${task.answer}` : null,
+          // Retomar is a corrida of its own, so the agent starts with no memory
+          // of the one that got stuck: the encargo has to travel with the task.
+          task.assignment
+            ? `Esto era lo que estabas haciendo:\n${task.assignment}`
+            : null,
+          `Te faltaba esto:\n${task.need}`,
+          task.answer ? `Te contestaron:\n${task.answer}` : null,
           task.attachments.length
             ? `Te dejaron estos archivos en la biblioteca, leelos con leer_archivo:\n${task.attachments
                 .map((f) => `- ${f.title} (id ${f.id})`)
@@ -86,6 +99,7 @@ export default function Workspace({ orgId }: { orgId: string }) {
           .filter(Boolean)
           .join("\n\n"),
         task.agentId,
+        { kind: "task", label: task.title },
       );
     },
     [start],
@@ -97,6 +111,28 @@ export default function Workspace({ orgId }: { orgId: string }) {
       run.show(thread);
     },
     [run],
+  );
+
+  // The same statuses the org chart paints itself with, so following a corrida
+  // and watching it move across the chart are one thing.
+  const openRun = useCallback(
+    (active: ActiveRun) => {
+      setThreadId(active.threadId);
+      run.watch(active);
+    },
+    [run],
+  );
+
+  // An automation's corrida happens on the server, so its hilo can be one this
+  // tab never listed.
+  const openThreadById = useCallback(
+    async (id: string) => {
+      const found =
+        threads.threads.find((t) => t.id === id) ??
+        (await threads.refresh()).find((t) => t.id === id);
+      if (found) openThread(found);
+    },
+    [openThread, threads],
   );
 
   const newThread = useCallback(() => {
@@ -162,14 +198,18 @@ export default function Workspace({ orgId }: { orgId: string }) {
                 companyName={org.company.name}
                 threads={threads.threads}
                 activeId={threadId}
+                runs={active.runs}
                 fileCount={files.files.length}
                 filesOpen={tab === "files"}
-                blockedCount={
-                  tasks.tasks.filter((t) => t.state === "blocked").length
-                }
+                blocked={tasks.tasks.filter((t) => t.state === "blocked")}
                 tasksOpen={tab === "tasks"}
+                automationCount={
+                  automations.automations.filter((a) => a.enabled).length
+                }
+                automationsOpen={tab === "automations"}
                 onNew={newThread}
                 onOpen={openThread}
+                onOpenRun={openRun}
                 onRemove={threads.remove}
                 onLibrary={() => void router.push("/")}
                 orgOpen={tab === "org"}
@@ -183,6 +223,10 @@ export default function Workspace({ orgId }: { orgId: string }) {
                 }}
                 onTasks={() => {
                   setTab("tasks");
+                  setPaneOpen(true);
+                }}
+                onAutomations={() => {
+                  setTab("automations");
                   setPaneOpen(true);
                 }}
               />
@@ -211,6 +255,12 @@ export default function Workspace({ orgId }: { orgId: string }) {
                 onAttachToTask={attachToTask}
                 onResumeTask={resumeTask}
                 onRemoveTask={(id) => void tasks.remove(id)}
+                automations={automations.automations}
+                onCreateAutomation={automations.create}
+                onSaveAutomation={automations.save}
+                onRunAutomation={automations.run}
+                onRemoveAutomation={(id) => void automations.remove(id)}
+                onOpenThread={(id) => void openThreadById(id)}
                 onEdit={() => void router.push(`/org/${orgId}/editar`)}
               />
 
@@ -233,6 +283,7 @@ export default function Workspace({ orgId }: { orgId: string }) {
                 answer={run.answer}
                 error={run.error}
                 running={run.running}
+                watching={run.watching}
                 onStart={(task) => void start(task)}
                 onStop={run.stop}
               />

@@ -176,16 +176,24 @@ export async function deleteSource(orgId: string, id: string): Promise<void> {
   );
 }
 
-/** The sources one agent was granted, each cut down to the tools it may call. */
-export async function sourcesForAgent(
+/**
+ * What every agent was granted, each source cut down to the tools that one may
+ * call. The whole company is resolved at once because a corrida needs more than
+ * the running agent's own share: its prompt names who else holds what.
+ */
+export async function accessByAgent(
   orgId: string,
-  grants: SourceGrant[],
-): Promise<AllowedSource[]> {
-  if (grants.length === 0) return [];
+  agents: { id: string; sources: SourceGrant[] }[],
+): Promise<Map<string, AllowedSource[]>> {
   const byId = new Map((await listSources(orgId)).map((s) => [s.id, s]));
-  return grants.flatMap((grant) => {
-    const source = byId.get(grant.sourceId);
-    if (!source?.enabled || grant.tools.length === 0) return [];
-    return [{ ...source, allowed: grant.tools }];
-  });
+  return new Map(
+    agents.map((agent) => [
+      agent.id,
+      agent.sources.flatMap((grant) => {
+        const source = byId.get(grant.sourceId);
+        if (!source?.enabled || grant.tools.length === 0) return [];
+        return [{ ...source, allowed: grant.tools }];
+      }),
+    ]),
+  );
 }

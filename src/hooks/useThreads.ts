@@ -20,7 +20,9 @@ export function useThreads(orgId: string) {
   }, [orgId]);
 
   const refresh = useCallback(async () => {
-    setThreads(await load(orgId));
+    const list = await load(orgId);
+    setThreads(list);
+    return list;
   }, [orgId]);
 
   const remove = useCallback(

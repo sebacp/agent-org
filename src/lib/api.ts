@@ -1,5 +1,6 @@
+import type { Automation, AutomationDraft } from "@/lib/automation-types";
 import type { FileFilter, FileMeta, FileRecord } from "@/lib/file-types";
-import type { Thread } from "@/lib/run-types";
+import type { ActiveRun, OrgSnapshot, Thread } from "@/lib/run-types";
 import type {
   SourceDraft,
   SourceProbe,
@@ -18,11 +19,34 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
+/**
+ * The org chart is edited here and stored here, so the server only gets a copy
+ * — enough for an automation to run the company with no tab open.
+ */
+export async function mirrorOrg(
+  orgId: string,
+  snapshot: OrgSnapshot,
+): Promise<void> {
+  await json(`/api/org?orgId=${encodeURIComponent(orgId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(snapshot),
+  });
+}
+
 export async function fetchThreads(orgId: string): Promise<Thread[]> {
   const { threads } = await json<{ threads: Thread[] }>(
     `/api/threads?orgId=${encodeURIComponent(orgId)}`,
   );
   return threads;
+}
+
+/** What the company is doing right now, including with no tab of yours open. */
+export async function fetchActiveRuns(orgId: string): Promise<ActiveRun[]> {
+  const { runs } = await json<{ runs: ActiveRun[] }>(
+    `/api/runs?orgId=${encodeURIComponent(orgId)}`,
+  );
+  return runs;
 }
 
 export async function removeThread(orgId: string, id: string): Promise<void> {
@@ -105,6 +129,65 @@ export async function answerTask(
 export async function removeTask(orgId: string, id: string): Promise<void> {
   await json(
     `/api/tasks?orgId=${encodeURIComponent(orgId)}&id=${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
+}
+
+export async function fetchAutomations(orgId: string): Promise<Automation[]> {
+  const { automations } = await json<{ automations: Automation[] }>(
+    `/api/automations?orgId=${encodeURIComponent(orgId)}`,
+  );
+  return automations;
+}
+
+export async function createAutomation(
+  orgId: string,
+  draft: AutomationDraft,
+): Promise<Automation> {
+  const { automation } = await json<{ automation: Automation }>(
+    `/api/automations?orgId=${encodeURIComponent(orgId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    },
+  );
+  return automation;
+}
+
+export async function saveAutomation(
+  orgId: string,
+  id: string,
+  patch: Partial<AutomationDraft>,
+): Promise<Automation> {
+  const { automation } = await json<{ automation: Automation }>(
+    `/api/automations?orgId=${encodeURIComponent(orgId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...patch, id }),
+    },
+  );
+  return automation;
+}
+
+/** Resolves when the whole corrida ends, which can take minutes. */
+export async function runAutomationNow(
+  orgId: string,
+  id: string,
+): Promise<void> {
+  await json(
+    `/api/automations?orgId=${encodeURIComponent(orgId)}&id=${encodeURIComponent(id)}&correr=1`,
+    { method: "POST" },
+  );
+}
+
+export async function removeAutomation(
+  orgId: string,
+  id: string,
+): Promise<void> {
+  await json(
+    `/api/automations?orgId=${encodeURIComponent(orgId)}&id=${encodeURIComponent(id)}`,
     { method: "DELETE" },
   );
 }

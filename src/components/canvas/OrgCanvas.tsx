@@ -74,8 +74,8 @@ export default function OrgCanvas({
           variant={BackgroundVariant.Dots}
           gap={24}
           size={1}
-          color="#d5d2c9"
-          bgColor="var(--color-canvas)"
+          color="var(--color-board-dot)"
+          bgColor="var(--color-board)"
         />
         {compact ? null : (
           <Controls showInteractive={false} position="bottom-left" />

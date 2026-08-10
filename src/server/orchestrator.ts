@@ -8,11 +8,13 @@ import { modelCost, type TokenUsage } from "@/lib/usage";
 import { chat } from "@/server/deepseek";
 import {
   consolidatePrompt,
+  directoryPrompt,
   leafPrompt,
   splitPrompt,
   systemPrompt,
+  type AgentAccess,
 } from "@/server/prompts";
-import { sourcesForAgent } from "@/server/sources";
+import { accessByAgent } from "@/server/sources";
 import { runTool, toolsFor, type ToolSchema } from "@/server/tools";
 
 interface Assignment {
@@ -79,6 +81,16 @@ export async function runOrg(
   const byId = new Map(request.agents.map((a) => [a.id, a]));
   const departmentById = new Map(request.departments.map((d) => [d.id, d]));
 
+  const granted = await accessByAgent(request.orgId, request.agents);
+  // The prompts get the labels and nothing else: a source carries its token.
+  const access = new Map<string, AgentAccess[]>(
+    [...granted].map(([id, sources]) => [
+      id,
+      sources.map((s) => ({ label: s.label || "fuente", tools: s.allowed })),
+    ]),
+  );
+  const directory = directoryPrompt(request, access);
+
   async function execute(
     agentId: string,
     task: string,
@@ -88,11 +100,12 @@ export async function runOrg(
     const agent = byId.get(agentId);
     if (!agent) return "";
 
-    const sources = await sourcesForAgent(request.orgId, agent.sources);
+    const sources = granted.get(agentId) ?? [];
     const system = systemPrompt(
       agent,
       request.company,
       departmentById.get(agent.department),
+      directory,
       sources.map((s) => s.label || "fuente"),
     );
     // Reaching a source means connecting to it, so the list is only built if a
@@ -115,6 +128,7 @@ export async function runOrg(
         agent,
         sources,
         agent.library,
+        task,
       );
       emit({
         type: "tool",
@@ -153,7 +167,7 @@ export async function runOrg(
         apiKey,
         model: agent.model,
         system,
-        user: splitPrompt(task, reports),
+        user: splitPrompt(task, reports, request, access),
         onUsage,
         signal,
       });

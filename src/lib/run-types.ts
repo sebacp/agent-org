@@ -26,17 +26,51 @@ export interface RunAgent {
   library: LibraryPermission[];
 }
 
-export interface RunRequest {
-  /** Which company's file library the agents get to read and write. */
-  orgId: string;
-  threadId: string;
-  task: string;
+/**
+ * The company with nothing asked of it yet. The org chart is only ever edited
+ * in the browser, so the browser mirrors this to the server, and that copy is
+ * what an automation runs against when there is no tab open.
+ */
+export interface OrgSnapshot {
   company: CompanyProfile;
   departments: DepartmentDef[];
   agents: RunAgent[];
   /** Agent id to the ids of its direct reports, from `delegates` edges only. */
   reports: Record<string, string[]>;
   rootId: string;
+}
+
+/**
+ * Where a corrida came from. Every one of them leaves the same kind of thread
+ * behind, so without this the riel cannot tell an automation from something you
+ * typed yourself.
+ */
+export interface RunOrigin {
+  kind: "manual" | "automation" | "task";
+  /** The automation's name or the pendiente's title; empty when you asked. */
+  label: string;
+}
+
+export const MANUAL_ORIGIN: RunOrigin = { kind: "manual", label: "" };
+
+export interface RunRequest extends OrgSnapshot {
+  /** Which company's file library the agents get to read and write. */
+  orgId: string;
+  threadId: string;
+  task: string;
+  origin: RunOrigin;
+}
+
+/** A corrida happening right now, on this server, for anyone who asks. */
+export interface ActiveRun {
+  threadId: string;
+  title: string;
+  /** The whole pedido, for a tab that opens the corrida to show it on top. */
+  task: string;
+  /** Whose result is the final answer rather than one more line of trace. */
+  rootId: string;
+  origin: RunOrigin;
+  startedAt: string;
 }
 
 export type RunEvent =
@@ -63,6 +97,8 @@ export interface Thread {
   title: string;
   task: string;
   answer: string;
+  /** Absent on threads saved before corridas recorded where they came from. */
+  origin?: RunOrigin;
   steps: ThreadStep[];
   /** Absent on threads saved before the run started counting tokens. */
   usage?: RunUsage;

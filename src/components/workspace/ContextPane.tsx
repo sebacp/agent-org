@@ -8,7 +8,9 @@ import {
 import OrgCanvas from "@/components/canvas/OrgCanvas";
 import Avatar from "@/components/ui/Avatar";
 import Markdown from "@/components/ui/Markdown";
+import AutomationBoard from "@/components/workspace/AutomationBoard";
 import TaskBoard from "@/components/workspace/TaskBoard";
+import type { Automation, AutomationDraft } from "@/lib/automation-types";
 import type { FileMeta } from "@/lib/file-types";
 import type { PendingTask, TaskAttachment } from "@/lib/task-types";
 import type { AgentNode, OrgEdge } from "@/lib/types";
@@ -19,12 +21,13 @@ import {
   type RunUsage,
 } from "@/lib/usage";
 
-export type ContextTab = "org" | "tasks" | "files";
+export type ContextTab = "org" | "tasks" | "files" | "automations";
 
 const TABS = [
   ["org", "Organigrama"],
   ["tasks", "Pendientes"],
   ["files", "Biblioteca"],
+  ["automations", "Automatizaciones"],
 ] as const;
 
 const WHEN = new Intl.DateTimeFormat("es-AR", {
@@ -63,6 +66,15 @@ interface ContextPaneProps {
   onAttachToTask: (task: PendingTask, file: File) => Promise<TaskAttachment>;
   onResumeTask: (task: PendingTask) => void;
   onRemoveTask: (id: string) => void;
+  automations: Automation[];
+  onCreateAutomation: (draft: AutomationDraft) => Promise<void>;
+  onSaveAutomation: (
+    id: string,
+    patch: Partial<AutomationDraft>,
+  ) => Promise<void>;
+  onRunAutomation: (id: string) => Promise<void>;
+  onRemoveAutomation: (id: string) => void;
+  onOpenThread: (threadId: string) => void;
   onEdit: () => void;
 }
 
@@ -88,11 +100,21 @@ export default function ContextPane({
   onAttachToTask,
   onResumeTask,
   onRemoveTask,
+  automations,
+  onCreateAutomation,
+  onSaveAutomation,
+  onRunAutomation,
+  onRemoveAutomation,
+  onOpenThread,
   onEdit,
 }: ContextPaneProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
   const blocked = tasks.filter((t) => t.state === "blocked").length;
+  const agentOptions = nodes.map((node) => ({
+    id: node.id,
+    label: node.data.role || node.data.name || "Sin rol",
+  }));
   const { fitView } = useReactFlow();
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -147,6 +169,9 @@ export default function ContextPane({
                 {label}
                 {id === "tasks" && blocked ? ` · ${blocked}` : ""}
                 {id === "files" && files.length ? ` · ${files.length}` : ""}
+                {id === "automations" && automations.length
+                  ? ` · ${automations.length}`
+                  : ""}
               </button>
             ))}
           </div>
@@ -216,14 +241,24 @@ export default function ContextPane({
             ) : null}
           </>
         ) : tab === "tasks" ? (
+          <TaskBoard
+            tasks={tasks}
+            onAnswer={onAnswerTask}
+            onAttach={onAttachToTask}
+            onOpenFile={onOpenFile}
+            onResume={onResumeTask}
+            onRemove={onRemoveTask}
+          />
+        ) : tab === "automations" ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <TaskBoard
-              tasks={tasks}
-              onAnswer={onAnswerTask}
-              onAttach={onAttachToTask}
-              onOpenFile={onOpenFile}
-              onResume={onResumeTask}
-              onRemove={onRemoveTask}
+            <AutomationBoard
+              automations={automations}
+              agents={agentOptions}
+              onCreate={onCreateAutomation}
+              onSave={onSaveAutomation}
+              onRun={onRunAutomation}
+              onRemove={onRemoveAutomation}
+              onOpenThread={onOpenThread}
             />
           </div>
         ) : (

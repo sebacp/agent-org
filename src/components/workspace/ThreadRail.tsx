@@ -1,53 +1,97 @@
-import { useState } from "react";
-import type { Thread } from "@/lib/run-types";
+import { useEffect, useState } from "react";
+import type { ActiveRun, RunOrigin, Thread } from "@/lib/run-types";
+import type { PendingTask } from "@/lib/task-types";
 
 const WHEN = new Intl.DateTimeFormat("es-AR", {
   day: "numeric",
   month: "short",
 });
 
+/** How often the elapsed labels are redrawn while something is running. */
+const TICK_MS = 30_000;
+
+const ORIGIN: Record<RunOrigin["kind"], string> = {
+  manual: "vos",
+  automation: "automatización",
+  task: "pendiente",
+};
+
 function whenLabel(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? "" : WHEN.format(date);
+}
+
+/**
+ * Coarser than a stopwatch on purpose: the clock it reads only moves once a
+ * tick, and to the minute that lag never shows.
+ */
+function agoLabel(iso: string, now: number): string {
+  const minutes = Math.max(0, Math.floor((now - Date.parse(iso)) / 60_000));
+  if (minutes < 1) return "recién";
+  if (minutes < 60) return `hace ${minutes} min`;
+  return `hace ${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 
 interface ThreadRailProps {
   companyName: string;
   threads: Thread[];
   activeId: string | null;
+  /** What the company is doing right now, whoever set it off. */
+  runs: ActiveRun[];
   fileCount: number;
   filesOpen: boolean;
   /** Only the ones waiting on you; the rest need no nudge. */
-  blockedCount: number;
+  blocked: PendingTask[];
   tasksOpen: boolean;
+  /** Only the ones still armed; a paused one is not going to wake up. */
+  automationCount: number;
+  automationsOpen: boolean;
   onNew: () => void;
   onOpen: (thread: Thread) => void;
+  /** Follows a corrida that is still going, wherever it was set off. */
+  onOpenRun: (run: ActiveRun) => void;
   onRemove: (id: string) => void;
   onLibrary: () => void;
   onOrg: () => void;
   orgOpen: boolean;
   onFiles: () => void;
   onTasks: () => void;
+  onAutomations: () => void;
 }
 
 export default function ThreadRail({
   companyName,
   threads,
   activeId,
+  runs,
   fileCount,
   filesOpen,
-  blockedCount,
+  blocked,
   tasksOpen,
+  automationCount,
+  automationsOpen,
   onNew,
   onOpen,
+  onOpenRun,
   onRemove,
   onLibrary,
   onOrg,
   orgOpen,
   onFiles,
   onTasks,
+  onAutomations,
 }: ThreadRailProps) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const busy = runs.length > 0 || blocked.length > 0;
+
+  // A quiet rail redraws nothing; while something runs the clock advances once
+  // a tick, and the labels below are coarse enough that the lag never shows.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (runs.length === 0) return;
+    const timer = window.setInterval(() => setNow(Date.now()), TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [runs.length]);
 
   return (
     <aside className="hidden h-full w-[248px] shrink-0 flex-col border-r border-hairline bg-chrome md:flex">
@@ -99,9 +143,11 @@ export default function ThreadRail({
         >
           <span>Pendientes</span>
           <span
-            className={`text-[12px] ${blockedCount ? "text-ink" : "text-faint"}`}
+            className={`text-[12px] ${
+              blocked.length ? "text-ink" : "text-faint"
+            }`}
           >
-            {blockedCount}
+            {blocked.length}
           </span>
         </button>
         <button
@@ -116,9 +162,73 @@ export default function ThreadRail({
           <span>Biblioteca</span>
           <span className="text-[12px] text-faint">{fileCount}</span>
         </button>
+        <button
+          type="button"
+          onClick={onAutomations}
+          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-colors ${
+            automationsOpen
+              ? "bg-raised text-ink"
+              : "text-dim hover:bg-raised/60 hover:text-ink"
+          }`}
+        >
+          <span>Automatizaciones</span>
+          <span className="text-[12px] text-faint">{automationCount}</span>
+        </button>
       </nav>
 
       <nav className="min-h-0 flex-1 overflow-y-auto border-t border-hairline px-3 py-3">
+        {busy ? (
+          <>
+            <p className="px-3 pb-1 text-[10px] tracking-wide text-faint uppercase">
+              Ahora
+            </p>
+
+            {runs.map((run) => (
+              <button
+                key={run.threadId}
+                type="button"
+                onClick={() => onOpenRun(run)}
+                className={`relative block w-full rounded-lg px-3 py-2 pl-6 text-left transition-colors ${
+                  activeId === run.threadId
+                    ? "bg-raised"
+                    : "hover:bg-raised/60"
+                }`}
+              >
+                <span className="absolute top-[13px] left-3 size-1.5 animate-pulse rounded-full bg-ink/50" />
+                <span className="block truncate text-[13px] leading-snug text-ink">
+                  {run.origin.label || run.title}
+                </span>
+                <span className="mt-0.5 block text-[11px] text-faint">
+                  {ORIGIN[run.origin.kind]} · {agoLabel(run.startedAt, now)}
+                </span>
+              </button>
+            ))}
+
+            {/* A trabado is the only thing here that needs you rather than the
+              company, so it goes to the pane that lets you answer it. */}
+            {blocked.map((task) => (
+              <button
+                key={task.id}
+                type="button"
+                onClick={onTasks}
+                className="relative block w-full rounded-lg px-3 py-2 pl-6 text-left transition-colors hover:bg-raised/60"
+              >
+                <span className="absolute top-[13px] left-3 size-1.5 rounded-full border border-ink/40" />
+                <span className="block truncate text-[13px] leading-snug text-ink">
+                  {task.title}
+                </span>
+                <span className="mt-0.5 block text-[11px] text-faint">
+                  te está esperando
+                </span>
+              </button>
+            ))}
+
+            <p className="px-3 pt-4 pb-1 text-[10px] tracking-wide text-faint uppercase">
+              Antes
+            </p>
+          </>
+        ) : null}
+
         {threads.map((thread) => (
           <div key={thread.id} className="group relative">
             <button
@@ -130,14 +240,21 @@ export default function ThreadRail({
                   : "text-dim hover:bg-raised/60 hover:text-ink"
               }`}
             >
+              {/* An automation or a retomada names itself; only a pedido you
+                typed has nothing better than its own first words. */}
               <span className="block truncate text-[13px] leading-snug">
-                {thread.title}
+                {thread.origin?.label || thread.title}
               </span>
               <span className="mt-0.5 block text-[11px] text-faint">
-                {whenLabel(thread.createdAt)}
-                {thread.steps.length > 0
-                  ? ` · ${thread.steps.length} pasos`
-                  : ""}
+                {[
+                  ORIGIN[thread.origin?.kind ?? "manual"],
+                  whenLabel(thread.createdAt),
+                  thread.steps.length > 0
+                    ? `${thread.steps.length} pasos`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </span>
             </button>
 

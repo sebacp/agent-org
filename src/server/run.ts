@@ -1,0 +1,93 @@
+import type { RunEvent, RunRequest, ThreadStep } from "@/lib/run-types";
+import { addUsage, NO_USAGE, type RunUsage } from "@/lib/usage";
+import { publish } from "@/server/bus";
+import { runOrg } from "@/server/orchestrator";
+import { beginRun, endRun, recordEvent } from "@/server/runs";
+import { saveThread, threadTitle } from "@/server/threads";
+
+export interface RunOutcome {
+  answer: string;
+  steps: ThreadStep[];
+  usage: RunUsage;
+}
+
+/**
+ * One corrida and the thread it leaves behind. The browser streams the events
+ * as they happen and an automation throws them away, but both end up with the
+ * same thread on disk.
+ */
+export async function executeRun(
+  request: RunRequest,
+  onEvent: (event: RunEvent) => void,
+  signal: AbortSignal,
+): Promise<RunOutcome> {
+  const roleOf = new Map(request.agents.map((a) => [a.id, a.role]));
+  const steps: ThreadStep[] = [];
+  let usage: RunUsage = NO_USAGE;
+
+  const stepText = (event: RunEvent): string | null => {
+    switch (event.type) {
+      case "delegate":
+        return `${roleOf.get(event.toId) ?? event.toId}: ${event.task}`;
+      case "tool":
+        return event.summary;
+      case "failed":
+        return event.message;
+      // The root's result *is* the final answer, which the thread stores apart.
+      case "result":
+        return event.agentId === request.rootId ? null : event.text;
+      default:
+        return null;
+    }
+  };
+
+  // The trace is what the thread replays later, so it is built as it streams.
+  const send = (event: RunEvent) => {
+    if (event.type === "usage") {
+      usage = addUsage(usage, { ...event.usage, cost: event.cost });
+    }
+    const text = stepText(event);
+    if (text !== null && "agentId" in event && event.agentId) {
+      steps.push({
+        agentId: event.agentId,
+        role: roleOf.get(event.agentId) ?? "",
+        kind: event.type as ThreadStep["kind"],
+        text,
+      });
+    }
+    // Kept on the server too, so a tab that opens the corrida while it runs
+    // sees how it got here instead of joining a trace already in progress.
+    recordEvent(request.orgId, request.threadId, event);
+    onEvent(event);
+  };
+
+  const title = threadTitle(request.task);
+  beginRun(request.orgId, {
+    threadId: request.threadId,
+    title,
+    task: request.task,
+    rootId: request.rootId,
+    origin: request.origin,
+    startedAt: new Date().toISOString(),
+  });
+
+  try {
+    const answer = await runOrg(request, send, signal);
+    send({ type: "done", text: answer });
+
+    await saveThread(request.orgId, {
+      id: request.threadId,
+      title,
+      task: request.task,
+      answer,
+      origin: request.origin,
+      steps,
+      usage,
+    });
+    publish(request.orgId, "threads");
+
+    return { answer, steps, usage };
+  } finally {
+    endRun(request.orgId, request.threadId);
+  }
+}

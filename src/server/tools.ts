@@ -222,6 +222,8 @@ export async function runTool(
   agent: { id: string; role: string; department: string },
   sources: AllowedSource[],
   library: LibraryPermission[],
+  /** What this agent is working on, kept on anything it leaves behind. */
+  assignment: string,
 ): Promise<ToolOutcome> {
   let args: Record<string, unknown> = {};
   try {
@@ -372,6 +374,7 @@ export async function runTool(
       const task = await createTask(orgId, {
         title: asString(args.titulo),
         need: asString(args.falta),
+        assignment,
         agentId: agent.id,
         author: agent.role,
         area: agent.department,

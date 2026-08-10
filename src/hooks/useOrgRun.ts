@@ -1,9 +1,12 @@
 import { useCallback, useRef, useState } from "react";
 import { buildRunRequest } from "@/lib/run-request";
-import type {
-  AgentStatus,
-  RunEvent,
-  ThreadStep,
+import {
+  MANUAL_ORIGIN,
+  type ActiveRun,
+  type AgentStatus,
+  type RunEvent,
+  type RunOrigin,
+  type ThreadStep,
 } from "@/lib/run-types";
 import type {
   AgentNode,
@@ -110,6 +113,8 @@ export function useOrgRun(
   edges: OrgEdge[],
 ) {
   const [running, setRunning] = useState(false);
+  /** The corrida belongs to the server, so this tab reads it and nothing more. */
+  const [watching, setWatching] = useState(false);
   const [statuses, setStatuses] = useState<Record<string, AgentStatus>>({});
   const [results, setResults] = useState<Record<string, string>>({});
   const [trace, setTrace] = useState<ThreadStep[]>([]);
@@ -119,10 +124,16 @@ export function useOrgRun(
   const [answer, setAnswer] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const watchRef = useRef<EventSource | null>(null);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
+    // Closing the stream only stops this tab from reading: the corrida is the
+    // server's and keeps going.
+    watchRef.current?.close();
+    watchRef.current = null;
+    setWatching(false);
     setRunning(false);
   }, []);
 
@@ -139,9 +150,9 @@ export function useOrgRun(
   }, [stop]);
 
   const start = useCallback(
-    async (prompt: string, fromId?: string) => {
+    async (prompt: string, fromId?: string, origin: RunOrigin = MANUAL_ORIGIN) => {
       const request = buildRunRequest(
-        { orgId, threadId: crypto.randomUUID() },
+        { orgId, threadId: crypto.randomUUID(), origin },
         prompt,
         company,
         departments,
@@ -154,7 +165,7 @@ export function useOrgRun(
         return;
       }
 
-      abortRef.current?.abort();
+      stop();
       const controller = new AbortController();
       abortRef.current = controller;
 
@@ -221,7 +232,60 @@ export function useOrgRun(
         setRunning(false);
       }
     },
-    [company, departments, edges, nodes, orgId],
+    [company, departments, edges, nodes, orgId, stop],
+  );
+
+  /**
+   * Reads a corrida this tab never started: an automation, or the same company
+   * open somewhere else. The server replays what already happened before it
+   * streams the rest, so opening one halfway through is not joining it late.
+   */
+  const watch = useCallback(
+    (run: ActiveRun) => {
+      stop();
+      setStatuses({});
+      setResults({});
+      setTrace([]);
+      setSpend({});
+      setUsage(NO_USAGE);
+      setTask(run.task);
+      setAnswer(null);
+      setError(null);
+      setRunning(true);
+      setWatching(true);
+
+      // The chart the browser has, which is the one the corrida ran against
+      // unless somebody edited it in between.
+      const roleOf = new Map(nodes.map((n) => [n.id, n.data.role]));
+      const source = new EventSource(
+        `/api/watch?orgId=${encodeURIComponent(orgId)}&threadId=${encodeURIComponent(
+          run.threadId,
+        )}`,
+      );
+      watchRef.current = source;
+
+      const close = () => {
+        source.close();
+        if (watchRef.current === source) watchRef.current = null;
+        setWatching(false);
+        setRunning(false);
+      };
+
+      source.onmessage = (event: MessageEvent<string>) => {
+        applyEvent(JSON.parse(event.data) as RunEvent, roleOf, run.rootId, {
+          statuses: setStatuses,
+          results: setResults,
+          trace: setTrace,
+          spend: setSpend,
+          total: setUsage,
+          answer: setAnswer,
+          error: setError,
+        });
+      };
+      source.addEventListener("fin", close);
+      source.onerror = close;
+    },
+    [nodes, orgId, stop],
   );
 
   const show = useCallback(
@@ -247,6 +311,7 @@ export function useOrgRun(
 
   return {
     running,
+    watching,
     statuses,
     results,
     trace,
@@ -259,5 +324,6 @@ export function useOrgRun(
     stop,
     clear,
     show,
+    watch,
   };
 }
