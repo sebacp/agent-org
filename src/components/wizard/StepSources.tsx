@@ -119,7 +119,7 @@ export default function StepSources({
               </div>
 
               {probe?.error ? (
-                <p className="mt-2 text-[13px] leading-relaxed text-red-700">
+                <p className="mt-2 text-[13px] leading-relaxed text-danger">
                   {probe.error}
                 </p>
               ) : null}
@@ -184,7 +184,7 @@ export default function StepSources({
                   <button
                     type="button"
                     onClick={() => onRemove(source.id)}
-                    className="text-faint transition-colors hover:text-red-700"
+                    className="text-faint transition-colors hover:text-danger"
                   >
                     Borrar
                   </button>
@@ -302,7 +302,7 @@ export default function StepSources({
             )}
 
             {failure ? (
-              <p className="mt-3 text-[13px] leading-relaxed text-red-700">
+              <p className="mt-3 text-[13px] leading-relaxed text-danger">
                 {failure}
               </p>
             ) : null}

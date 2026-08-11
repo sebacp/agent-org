@@ -63,7 +63,7 @@ export default function SpendMeter({
           <span className="mt-1.5 block h-[3px] overflow-hidden rounded-full bg-hairline">
             <span
               style={{ width: `${filled}%` }}
-              className={`block h-full ${near ? "bg-amber-600" : "bg-dim/50"}`}
+              className={`block h-full ${near ? "bg-warn" : "bg-dim/50"}`}
             />
           </span>
         )}

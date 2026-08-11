@@ -232,7 +232,7 @@ export default function AutomationBoard({
       </select>
 
       {failure ? (
-        <p className="text-[11px] text-red-700">{failure}</p>
+        <p className="text-[11px] text-danger">{failure}</p>
       ) : null}
 
       <div className="flex gap-3 text-[12px]">
@@ -293,7 +293,7 @@ export default function AutomationBoard({
             type="button"
             aria-label="Borrar automatización"
             onClick={() => onRemove(automation.id)}
-            className="absolute top-2.5 right-0 text-[13px] text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-700 focus:opacity-100"
+            className="absolute top-2.5 right-0 text-[13px] text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-danger focus:opacity-100"
           >
             ×
           </button>
@@ -307,7 +307,7 @@ export default function AutomationBoard({
               </p>
 
               {automation.lastError ? (
-                <p className="mt-1.5 text-[11px] leading-relaxed text-red-700">
+                <p className="mt-1.5 text-[11px] leading-relaxed text-danger">
                   {automation.lastError}
                 </p>
               ) : null}

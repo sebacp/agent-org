@@ -233,7 +233,9 @@ export default function ThreadRail({
                 onClick={onTasks}
                 className="relative block w-full rounded-lg px-3 py-2 pl-6 text-left transition-colors hover:bg-raised/60"
               >
-                <span className="absolute top-[13px] left-3 size-1.5 rounded-full border border-ink/40" />
+                {/* The one bit of color in the rail: the dot is what says this
+                  one stopped and is not going to start again on its own. */}
+                <span className="absolute top-[13px] left-3 size-1.5 rounded-full bg-warn" />
                 <span className="block truncate text-[13px] leading-snug text-ink">
                   {task.title}
                 </span>
@@ -287,7 +289,7 @@ export default function ThreadRail({
                   onRemove(thread.id);
                   setConfirmId(null);
                 }}
-                className="absolute top-2 right-2 text-[11px] text-red-700"
+                className="absolute top-2 right-2 text-[11px] text-danger"
               >
                 Borrar
               </button>

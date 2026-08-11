@@ -1,17 +1,36 @@
 @import "tailwindcss";
 
+/**
+ * Every surface is about 1.5× the luminance of the one under it, so the layers
+ * separate without a border having to say so, and the three greys of the text
+ * all clear 4.5:1 on the darkest of them.
+ */
 @theme {
-  --color-canvas: #eceae4;
+  --color-canvas: #121210;
   /** The org chart, a step under the canvas so it doesn't read as more chat. */
-  --color-board: #e3e0d6;
-  --color-board-dot: #cecabf;
-  --color-chrome: #f7f6f2;
-  --color-panel: #ffffff;
-  --color-raised: #ecebe4;
-  --color-hairline: #e2e0d8;
-  --color-ink: #16150f;
-  --color-dim: #6e6c63;
-  --color-faint: #a3a096;
+  --color-board: #0a0a08;
+  --color-board-dot: #302f28;
+  --color-chrome: #1c1b18;
+  --color-panel: #262520;
+  --color-raised: #33322c;
+  --color-hairline: #45443c;
+  --color-ink: #fbfaf6;
+  --color-dim: #bcb9ae;
+  --color-faint: #8d8a7f;
+  /** What goes on top of `bg-ink`, which is the light surface down here. */
+  --color-on-ink: #121210;
+  /** Strokes drawn by hand on the chart, where a border token can't reach. */
+  --color-line: #5c5a50;
+  --color-line-soft: #46443c;
+  /** Overlays go under the sheet, so they can't be tied to the ink. */
+  --color-scrim: rgba(0, 0, 0, 0.7);
+
+  --color-danger: #ff9483;
+  --color-danger-soft: #3a211c;
+  --color-danger-line: #6b352c;
+  --color-warn: #f0b442;
+  --color-warn-soft: #33270f;
+  --color-warn-line: #5f4a1c;
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     sans-serif;
@@ -24,6 +43,12 @@ body,
   height: 100%;
 }
 
+/* Checkboxes, selects and the native scrollbar paint themselves, and stay
+   white until told what the page is. */
+html {
+  color-scheme: dark;
+}
+
 body {
   background: var(--color-canvas);
   color: var(--color-ink);
@@ -32,7 +57,7 @@ body {
 }
 
 ::selection {
-  background: #e2e0d8;
+  background: #4f4d43;
 }
 
 *::-webkit-scrollbar {
@@ -43,20 +68,23 @@ body {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: #d7d4cc;
+  background: #4a4840;
   border: 2px solid transparent;
   background-clip: content-box;
   border-radius: 999px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: #bcb8ae;
+  background: #636055;
   background-clip: content-box;
 }
 
 /* --- React Flow surface --- */
 
-.react-flow {
-  --xy-edge-stroke-default: #c4c1b8;
+/* `colorMode="dark"` puts its own strokes on `.react-flow.dark`, which outranks
+   a bare `.react-flow`, so the override has to match it to keep these. */
+.react-flow,
+.react-flow.dark {
+  --xy-edge-stroke-default: var(--color-line);
   --xy-edge-stroke-selected-default: var(--color-ink);
   --xy-connectionline-stroke-default: var(--color-ink);
 }
@@ -91,7 +119,7 @@ body {
   height: 9px;
   border-radius: 999px;
   background: var(--color-panel);
-  border: 1px solid #c4c1b8;
+  border: 1px solid var(--color-line);
   /* Kept out of the box's own transform, which React Flow uses to place it. */
   transform: translate(-50%, -50%);
   transition:
@@ -142,7 +170,7 @@ body {
 
 .react-flow__attribution {
   background: transparent;
-  color: #c9c6bd;
+  color: #56544b;
   font-size: 10px;
 }
 

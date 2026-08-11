@@ -20,7 +20,7 @@ function Card({
   const [open, setOpen] = useState(false);
 
   return (
-    <article className="pointer-events-auto w-[420px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-hairline bg-panel shadow-lg shadow-ink/5">
+    <article className="pointer-events-auto w-[420px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-hairline bg-panel shadow-lg shadow-black/50">
       <div className="flex items-start gap-2.5 px-4 pt-3.5">
         <Avatar seed={write.agentId} size={22} className="mt-px" />
         <div className="min-w-0 flex-1">
@@ -37,7 +37,7 @@ function Card({
             {write.source.label}
             {/* The only line here that is not about what it wants to do: this
               one writes, and nothing on the way back would undo it. */}
-            <span className="text-amber-700">· escribe</span>
+            <span className="text-warn">· escribe</span>
           </p>
         </div>
       </div>

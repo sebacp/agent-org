@@ -109,7 +109,7 @@ export default function AgentSheet({
         type="button"
         aria-label="Cerrar"
         onClick={onClose}
-        className="absolute inset-0 bg-ink/15"
+        className="absolute inset-0 bg-scrim"
       />
 
       <aside className="relative flex h-full w-full max-w-[440px] flex-col border-l border-hairline bg-chrome">

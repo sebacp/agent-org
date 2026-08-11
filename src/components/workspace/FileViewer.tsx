@@ -39,7 +39,7 @@ export default function FileViewer({
         type="button"
         aria-label="Cerrar"
         onClick={onClose}
-        className="absolute inset-0 bg-ink/15"
+        className="absolute inset-0 bg-scrim"
       />
 
       <article className="relative flex max-h-full w-full max-w-[720px] flex-col overflow-hidden rounded-2xl border border-hairline bg-panel">
@@ -61,14 +61,14 @@ export default function FileViewer({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           {error ? (
-            <p className="text-[13px] text-red-700">{error}</p>
+            <p className="text-[13px] text-danger">{error}</p>
           ) : file ? (
             <>
               {/* A dump that stopped short adds up to a figure that reads like
                 a total, so whoever opens it has to be told before they read a
                 single row. */}
               {file.partial ? (
-                <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] leading-relaxed text-amber-900">
+                <p className="mb-4 rounded-lg border border-warn-line bg-warn-soft px-4 py-3 text-[12px] leading-relaxed text-warn">
                   Este volcado quedó incompleto: faltan registros. {file.partial}
                 </p>
               ) : null}

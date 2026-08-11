@@ -12,7 +12,7 @@ export function CheckMark({ active }: { active: boolean }) {
         <path
           d="M2.5 6.2 4.8 8.5 9.5 3.8"
           fill="none"
-          stroke={active ? "#ffffff" : "transparent"}
+          stroke={active ? "var(--color-on-ink)" : "transparent"}
           strokeWidth="1.8"
           strokeLinecap="round"
           strokeLinejoin="round"

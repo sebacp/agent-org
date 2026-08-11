@@ -174,7 +174,7 @@ export default function ContextPane({
           type="button"
           aria-label="Cerrar"
           onClick={onClose}
-          className="fixed inset-0 z-30 bg-ink/15 lg:hidden"
+          className="fixed inset-0 z-30 bg-scrim lg:hidden"
         />
       ) : null}
 
@@ -322,7 +322,7 @@ export default function ContextPane({
                       <span className="block truncate text-[13px] text-ink">
                         {file.title}
                         {file.partial ? (
-                          <span className="ml-1.5 align-[1px] text-[10px] tracking-wide text-amber-700 uppercase">
+                          <span className="ml-1.5 align-[1px] text-[10px] tracking-wide text-warn uppercase">
                             incompleto
                           </span>
                         ) : null}
@@ -346,7 +346,7 @@ export default function ContextPane({
                     type="button"
                     aria-label="Borrar archivo"
                     onClick={() => onRemoveFile(file.id)}
-                    className="absolute top-2.5 right-2 text-[13px] text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-700 focus:opacity-100"
+                    className="absolute top-2.5 right-2 text-[13px] text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-danger focus:opacity-100"
                   >
                     ×
                   </button>

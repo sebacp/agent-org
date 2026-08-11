@@ -19,11 +19,11 @@ const STATUS_LABEL: Record<Exclude<AgentStatus, "idle">, string> = {
 };
 
 const STATUS_STYLE: Record<Exclude<AgentStatus, "idle">, string> = {
-  planning: "bg-ink text-white",
+  planning: "bg-ink text-on-ink",
   waiting: "bg-raised text-dim",
-  working: "bg-ink text-white",
+  working: "bg-ink text-on-ink",
   done: "bg-raised text-dim",
-  error: "bg-red-50 text-red-700",
+  error: "bg-danger-soft text-danger",
 };
 
 /** More than this and the chips take over the card. */
@@ -65,8 +65,8 @@ function AgentNodeCard({ id, data, selected }: NodeProps<AgentNode>) {
     <div
       className={`w-[220px] rounded-lg border bg-panel px-3.5 py-3 ${
         selected || busy
-          ? "border-ink shadow-[0_0_0_1px_#16150f]"
-          : "border-hairline shadow-[0_1px_2px_rgba(22,21,15,0.05)]"
+          ? "border-ink"
+          : "border-hairline shadow-[0_1px_2px_rgba(0,0,0,0.35)]"
       }`}
     >
       {isRoot ? null : <Handle type="target" position={Position.Top} />}

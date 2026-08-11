@@ -127,7 +127,7 @@ export default function Library() {
             Importar archivo
           </Button>
           {error ? (
-            <span className="text-[13px] text-red-700">{error}</span>
+            <span className="text-[13px] text-danger">{error}</span>
           ) : null}
         </footer>
       </div>

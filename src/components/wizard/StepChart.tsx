@@ -60,7 +60,7 @@ export default function StepChart({
           <Button onClick={() => fileRef.current?.click()}>Importar</Button>
 
           {error ? (
-            <span className="text-[13px] text-red-700">{error}</span>
+            <span className="text-[13px] text-danger">{error}</span>
           ) : null}
 
           {/* The whole chart is built with the handles, and nothing on the

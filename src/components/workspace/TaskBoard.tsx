@@ -1,11 +1,17 @@
 import { useState } from "react";
+import Button from "@/components/ui/Button";
 import type { PendingTask, TaskAttachment } from "@/lib/task-types";
 
+/** A blocked one is the only kind that stops until you do something. */
 const MARK: Record<PendingTask["state"], string> = {
-  blocked: "border-ink/40",
-  open: "border-ink/40 bg-ink/40",
-  done: "border-faint bg-faint",
+  blocked: "bg-warn",
+  open: "border border-ink/40 bg-ink/40",
+  done: "border border-faint bg-faint",
 };
+
+/** Same shape as a `secondary` Button, for the label a file input needs. */
+const UPLOAD =
+  "inline-flex cursor-pointer items-center rounded-md border border-hairline bg-panel px-2.5 py-1 text-[12px] text-ink transition-colors hover:bg-raised";
 
 const LABEL: Record<PendingTask["state"], string> = {
   blocked: "esperando tu respuesta",
@@ -97,8 +103,7 @@ export default function TaskBoard({
                 : "text-dim hover:bg-raised/60 hover:text-ink"
             }`}
           >
-            {label}
-            {count ? ` · ${count}` : ""}
+            {label} · {count}
           </button>
         ))}
       </div>
@@ -113,7 +118,7 @@ export default function TaskBoard({
         {visible.map((task) => (
           <div key={task.id} className="group relative px-3 py-3">
             <span
-              className={`absolute top-4 left-0 size-1.5 rounded-full border ${MARK[task.state]}`}
+              className={`absolute top-4 left-0 size-1.5 rounded-full ${MARK[task.state]}`}
             />
             <p
               className={`pr-5 text-[13px] leading-snug ${
@@ -132,7 +137,7 @@ export default function TaskBoard({
               type="button"
               aria-label="Borrar pendiente"
               onClick={() => onRemove(task.id)}
-              className="absolute top-2.5 right-0 text-[13px] text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-700 focus:opacity-100"
+              className="absolute top-2.5 right-0 text-[13px] text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-danger focus:opacity-100"
             >
               ×
             </button>
@@ -199,7 +204,7 @@ export default function TaskBoard({
                           onClick={() =>
                             setAttached((c) => c.filter((a) => a.id !== file.id))
                           }
-                          className="text-faint transition-colors hover:text-red-700"
+                          className="text-faint transition-colors hover:text-danger"
                         >
                           ×
                         </button>
@@ -209,11 +214,11 @@ export default function TaskBoard({
                 ) : null}
 
                 {failure ? (
-                  <p className="mt-1.5 text-[11px] text-red-700">{failure}</p>
+                  <p className="mt-1.5 text-[11px] text-danger">{failure}</p>
                 ) : null}
 
-                <div className="mt-1.5 flex gap-3 text-[12px]">
-                  <label className="cursor-pointer text-faint transition-colors hover:text-ink">
+                <div className="mt-2 flex gap-2">
+                  <label className={UPLOAD}>
                     {uploading ? "Subiendo…" : "Adjuntar"}
                     <input
                       type="file"
@@ -226,41 +231,37 @@ export default function TaskBoard({
                       }}
                     />
                   </label>
-                  <button
-                    type="button"
+                  <Button
+                    size="sm"
+                    variant="primary"
                     onClick={() => save(task.id)}
-                    className="text-ink transition-colors hover:text-dim"
                   >
                     Guardar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditing(null)}
-                    className="text-faint transition-colors hover:text-ink"
-                  >
+                  </Button>
+                  <Button size="sm" onClick={() => setEditing(null)}>
                     Cancelar
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
-              <div className="mt-2 flex gap-3 text-[12px]">
+              <div className="mt-2 flex gap-2">
                 {task.state === "done" ? null : (
-                  <button
-                    type="button"
+                  <Button
+                    size="sm"
+                    variant="secondary"
                     onClick={() => open(task)}
-                    className="text-faint transition-colors hover:text-ink"
                   >
                     {task.answer ? "Editar respuesta" : "Contestar"}
-                  </button>
+                  </Button>
                 )}
                 {task.state === "open" ? (
-                  <button
-                    type="button"
+                  <Button
+                    size="sm"
+                    variant="primary"
                     onClick={() => onResume(task)}
-                    className="text-ink transition-colors hover:text-dim"
                   >
                     Retomar
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             )}

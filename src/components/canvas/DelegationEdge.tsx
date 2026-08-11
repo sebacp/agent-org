@@ -9,9 +9,9 @@ import {
 } from "@xyflow/react";
 import type { OrgEdge } from "@/lib/types";
 
-const STROKE_DELEGATES = "#c4c1b8";
-const STROKE_LINK = "#d3d0c7";
-const STROKE_SELECTED = "#16150f";
+const STROKE_DELEGATES = "var(--color-line)";
+const STROKE_LINK = "var(--color-line-soft)";
+const STROKE_SELECTED = "var(--color-ink)";
 
 export default function DelegationEdge({
   id,
@@ -88,7 +88,7 @@ export default function DelegationEdge({
               aria-label="Cortar la línea"
               // The label renderer lets nothing through by default, and leaving
               // the line for the button would otherwise close it mid-reach.
-              className="pointer-events-auto flex size-[22px] items-center justify-center rounded-full border border-hairline bg-panel text-[13px] leading-none text-dim shadow-[0_1px_2px_rgba(22,21,15,0.08)] transition-colors hover:border-red-700 hover:text-red-700"
+              className="pointer-events-auto flex size-[22px] items-center justify-center rounded-full border border-hairline bg-panel text-[13px] leading-none text-dim shadow-[0_1px_2px_rgba(0,0,0,0.4)] transition-colors hover:border-danger hover:text-danger"
               onPointerEnter={() => setPointed(true)}
               onPointerLeave={() => setPointed(false)}
               onClick={() => void deleteElements({ edges: [{ id }] })}

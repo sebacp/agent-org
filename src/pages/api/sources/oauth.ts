@@ -28,11 +28,12 @@ function page(heading: string, detail: string, sourceId?: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escape(heading)}</title>
 <style>
+  html { color-scheme: dark; }
   body { margin: 0; display: grid; place-items: center; height: 100vh;
-         background: #faf9f7; color: #2b2926;
+         background: #121210; color: #fbfaf6;
          font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, sans-serif; }
   div { max-width: 30rem; padding: 0 2rem; text-align: center; }
-  p { margin: .5rem 0 0; color: #6b665f; font-size: 13px; }
+  p { margin: .5rem 0 0; color: #bcb9ae; font-size: 13px; }
 </style>
 <div><strong>${escape(heading)}</strong><p>${escape(detail)}</p></div>
 <script>

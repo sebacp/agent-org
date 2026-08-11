@@ -84,7 +84,7 @@ function TraceLine({
   const line = (
     <p
       className={`flex gap-2 px-1 text-[12px] leading-relaxed ${
-        failed ? "text-red-700" : "text-faint"
+        failed ? "text-danger" : "text-faint"
       }`}
     >
       <Avatar seed={step.agentId} size={18} className="mt-px" />
@@ -232,7 +232,7 @@ function Exchange({
       ) : null}
 
       {live?.error ? (
-        <p className="mt-7 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] leading-relaxed text-red-700">
+        <p className="mt-7 rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-[13px] leading-relaxed text-danger">
           {live.error}
         </p>
       ) : null}

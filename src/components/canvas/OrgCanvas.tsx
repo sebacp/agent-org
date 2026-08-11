@@ -27,7 +27,7 @@ const defaultEdgeOptions = {
     type: MarkerType.ArrowClosed,
     width: 14,
     height: 14,
-    color: "#c4c1b8",
+    color: "var(--color-line)",
   },
 };
 
@@ -84,9 +84,9 @@ export default function OrgCanvas({
         edgeTypes={edgeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
         connectionLineType={ConnectionLineType.SmoothStep}
-        connectionLineStyle={{ stroke: "#16150f", strokeWidth: 1.5 }}
+        connectionLineStyle={{ stroke: "var(--color-ink)", strokeWidth: 1.5 }}
         deleteKeyCode={["Backspace", "Delete"]}
-        colorMode="light"
+        colorMode="dark"
         panOnScroll
         fitView
         fitViewOptions={{ padding: compact ? 0.08 : 0.24 }}
