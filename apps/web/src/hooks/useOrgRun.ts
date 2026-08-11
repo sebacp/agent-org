@@ -298,7 +298,16 @@ export function useOrgRun(
           buffer = frames.pop() ?? "";
 
           for (const frame of frames) {
-            const payload = frame.replace(/^data: /, "").trim();
+            // Only the `data:` lines are ours. A frame can also be the
+            // keep-alive the server sends every twenty-five seconds so nothing
+            // in between decides the stream died, and that one starts with a
+            // colon: reading it as an event killed every corrida that took
+            // longer than that to answer.
+            const payload = frame
+              .split("\n")
+              .filter((line) => line.startsWith("data:"))
+              .map((line) => line.slice(5).trim())
+              .join("\n");
             if (!payload) continue;
             applyEvent(
               JSON.parse(payload) as RunEvent,
