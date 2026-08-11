@@ -35,11 +35,14 @@ export default function StepTeam({
         {departments.map((department) => {
           const presets = ROLE_PRESETS.filter(
             (p) => p.department === department.id,
-          ).sort((a, b) => (a.seniority === b.seniority ? 0 : a.seniority === "lead" ? -1 : 1));
+          ).sort((a, b) =>
+            a.seniority === b.seniority ? 0 : a.seniority === "lead" ? -1 : 1,
+          );
           const presetRoles = new Set(presets.map((p) => p.role));
           const extras = nodes.filter(
             (n) =>
-              n.data.department === department.id && !presetRoles.has(n.data.role),
+              n.data.department === department.id &&
+              !presetRoles.has(n.data.role),
           );
 
           return (

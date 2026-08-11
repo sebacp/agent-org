@@ -28,10 +28,14 @@ export interface LiveText {
 const NO_LIVE: LiveText = { thinking: "", answer: "" };
 
 interface Setters {
-  statuses: (fn: (s: Record<string, AgentStatus>) => Record<string, AgentStatus>) => void;
+  statuses: (
+    fn: (s: Record<string, AgentStatus>) => Record<string, AgentStatus>,
+  ) => void;
   results: (fn: (r: Record<string, string>) => Record<string, string>) => void;
   trace: (fn: (t: ThreadStep[]) => ThreadStep[]) => void;
-  spend: (fn: (s: Record<string, RunUsage>) => Record<string, RunUsage>) => void;
+  spend: (
+    fn: (s: Record<string, RunUsage>) => Record<string, RunUsage>,
+  ) => void;
   total: (fn: (u: RunUsage) => RunUsage) => void;
   live: (fn: (l: LiveText) => LiveText) => void;
   answer: (text: string) => void;
@@ -204,15 +208,21 @@ export function useOrgRun(
   }, [stop]);
 
   const start = useCallback(
-    async (prompt: string, fromId?: string, origin: RunOrigin = MANUAL_ORIGIN) => {
-      // A pedido you type continues whatever hilo is open. A retomada doesn't:
-      // it starts at whoever got stuck, with an encargo written to stand alone.
-      const open = origin.kind === "manual" ? threadId : null;
-      const kept = open ? turns : [];
+    async (
+      prompt: string,
+      fromId?: string,
+      origin: RunOrigin = MANUAL_ORIGIN,
+      /** A hilo to append to, when the pedido belongs to one already saved. */
+      into?: Thread,
+    ) => {
+      // A pedido you type continues whatever hilo is open, and a retomada the
+      // one the pendiente was left in. Only an automation opens its own.
+      const open = into ? into.id : origin.kind === "manual" ? threadId : null;
+      const kept = into ? into.turns : open ? turns : [];
       // The exchange on screen finished a moment ago, so it is not in `turns`
       // yet — and it is the one a follow-up is most likely about.
       const done =
-        open && task !== null && answer !== null
+        !into && open && task !== null && answer !== null
           ? [...kept, { task, answer, steps: trace, usage }]
           : kept;
 
@@ -269,7 +279,9 @@ export function useOrgRun(
           const body = (await response.json().catch(() => null)) as {
             error?: string;
           } | null;
-          throw new Error(body?.error ?? `El servidor respondió ${response.status}.`);
+          throw new Error(
+            body?.error ?? `El servidor respondió ${response.status}.`,
+          );
         }
 
         const reader = response.body.getReader();
@@ -288,21 +300,28 @@ export function useOrgRun(
           for (const frame of frames) {
             const payload = frame.replace(/^data: /, "").trim();
             if (!payload) continue;
-            applyEvent(JSON.parse(payload) as RunEvent, roleOf, request.rootId, {
-              statuses: setStatuses,
-              results: setResults,
-              trace: setTrace,
-              spend: setSpend,
-              total: setUsage,
-              live: setLive,
-              answer: setAnswer,
-              error: setError,
-            });
+            applyEvent(
+              JSON.parse(payload) as RunEvent,
+              roleOf,
+              request.rootId,
+              {
+                statuses: setStatuses,
+                results: setResults,
+                trace: setTrace,
+                spend: setSpend,
+                total: setUsage,
+                live: setLive,
+                answer: setAnswer,
+                error: setError,
+              },
+            );
           }
         }
       } catch (caught) {
         if (!controller.signal.aborted) {
-          setError(caught instanceof Error ? caught.message : "Falló la corrida.");
+          setError(
+            caught instanceof Error ? caught.message : "Falló la corrida.",
+          );
         }
       } finally {
         if (abortRef.current === controller) abortRef.current = null;

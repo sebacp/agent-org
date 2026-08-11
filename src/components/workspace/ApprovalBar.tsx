@@ -15,9 +15,10 @@ function Card({
   onAnswer,
 }: {
   write: PendingWrite;
-  onAnswer: (id: string, ok: boolean) => void;
+  onAnswer: (id: string, ok: boolean, always?: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [always, setAlways] = useState(false);
 
   return (
     <article className="pointer-events-auto w-[420px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-hairline bg-panel shadow-lg shadow-black/50">
@@ -26,9 +27,9 @@ function Card({
         <div className="min-w-0 flex-1">
           <p className="text-[13px] leading-snug text-ink">
             {write.role || "Un agente"} quiere ejecutar{" "}
-            <span className="font-mono text-[12px]">{write.tool}</span>
+            <span className="font-mono text-[13px]">{write.tool}</span>
           </p>
-          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-faint">
+          <p className="mt-1 flex items-center gap-1.5 text-[12px] text-faint">
             <SourceIcon
               label={write.source.label}
               url={write.source.url}
@@ -45,24 +46,48 @@ function Card({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="mt-2 px-4 text-[11px] text-faint underline decoration-hairline underline-offset-2 transition-colors hover:text-ink"
+        className="mt-2 px-4 text-[12px] text-faint underline decoration-hairline underline-offset-2 transition-colors hover:text-ink"
       >
         {open ? "ocultar lo que manda" : "ver lo que manda"}
       </button>
       {open ? (
-        <pre className="mx-4 mt-1.5 max-h-56 overflow-auto rounded-lg border border-hairline bg-canvas px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-dim">
+        <pre className="mx-4 mt-1.5 max-h-56 overflow-auto rounded-lg border border-hairline bg-canvas px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-dim">
           {write.args}
         </pre>
       ) : null}
 
-      <div className="mt-3 flex items-center gap-2 border-t border-hairline px-4 py-2.5">
-        <p className="min-w-0 flex-1 text-[11px] text-faint">
-          Si no contestás, no se ejecuta.
-        </p>
-        <Button onClick={() => onAnswer(write.id, false)}>Rechazar</Button>
-        <Button variant="primary" onClick={() => onAnswer(write.id, true)}>
-          Autorizar
-        </Button>
+      <div className="mt-3 border-t border-hairline px-4 py-2.5">
+        {/* Only ever offered next to "Autorizar": a rejection that stuck would
+          be a way to break a source without ever seeing where it broke. */}
+        <label className="flex cursor-pointer items-start gap-2">
+          <input
+            type="checkbox"
+            checked={always}
+            onChange={(event) => setAlways(event.target.checked)}
+            className="mt-0.5 accent-ink"
+          />
+          <span className="min-w-0 text-[12px] leading-relaxed text-faint">
+            <span className="text-dim">No volver a preguntar</span> por{" "}
+            <span className="font-mono">{write.tool}</span> en{" "}
+            {write.source.label}. Queda en Seguridad, y ahí se saca.
+          </span>
+        </label>
+
+        <div className="mt-2.5 flex items-center gap-2">
+          <p className="min-w-0 flex-1 text-[12px] text-faint">
+            Si no contestás, no se ejecuta.
+          </p>
+          <Button size="sm" onClick={() => onAnswer(write.id, false)}>
+            Rechazar
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => onAnswer(write.id, true, always)}
+          >
+            Autorizar
+          </Button>
+        </div>
       </div>
     </article>
   );
@@ -73,7 +98,7 @@ export default function ApprovalBar({
   onAnswer,
 }: {
   approvals: PendingWrite[];
-  onAnswer: (id: string, ok: boolean) => void;
+  onAnswer: (id: string, ok: boolean, always?: boolean) => void;
 }) {
   if (approvals.length === 0) return null;
 

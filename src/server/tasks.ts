@@ -13,7 +13,9 @@ function tasksPath(orgId: string): string {
 
 export async function listTasks(orgId: string): Promise<PendingTask[]> {
   try {
-    const parsed: unknown = JSON.parse(await readFile(tasksPath(orgId), "utf8"));
+    const parsed: unknown = JSON.parse(
+      await readFile(tasksPath(orgId), "utf8"),
+    );
     if (!Array.isArray(parsed)) return [];
     // Records written before attachments existed would otherwise read as null.
     return (parsed as PendingTask[]).map((t) => ({
@@ -40,6 +42,7 @@ export async function createTask(
     agentId: string;
     author: string;
     area: string;
+    threadId: string;
   },
 ): Promise<PendingTask> {
   const now = new Date().toISOString();
@@ -51,6 +54,7 @@ export async function createTask(
     answer: "",
     attachments: [],
     agentId: input.agentId,
+    threadId: input.threadId,
     author: input.author,
     area: input.area,
     state: "blocked",

@@ -2,18 +2,13 @@ import type { Automation, AutomationDraft } from "@/lib/automation-types";
 import type { FileFilter, FileMeta, FileRecord } from "@/lib/file-types";
 import type { GuardState, Guards, PendingWrite } from "@/lib/guard-types";
 import type { ActiveRun, OrgSnapshot, Thread } from "@/lib/run-types";
-import type {
-  SourceDraft,
-  SourceProbe,
-  SourceView,
-} from "@/lib/source-types";
+import type { SourceDraft, SourceProbe, SourceView } from "@/lib/source-types";
 import type { PendingTask, TaskAttachment } from "@/lib/task-types";
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   const body = (await response.json().catch(() => null)) as
-    | (T & { error?: string })
-    | null;
+    (T & { error?: string }) | null;
   if (!response.ok || !body) {
     throw new Error(body?.error ?? `El servidor respondió ${response.status}.`);
   }
@@ -103,16 +98,33 @@ export async function answerApproval(
   orgId: string,
   id: string,
   ok: boolean,
+  /** Stop asking about this function of this source from now on. */
+  always = false,
 ): Promise<boolean> {
   const { answered } = await json<{ answered: boolean }>(
     `/api/approvals?orgId=${encodeURIComponent(orgId)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, ok }),
+      body: JSON.stringify({ id, ok, always }),
     },
   );
   return answered;
+}
+
+/** Puts a function back to being asked about. */
+export async function revokeGrant(
+  orgId: string,
+  sourceId: string,
+  tool: string,
+): Promise<GuardState> {
+  const { guards } = await json<{ guards: GuardState }>(
+    `/api/guards?orgId=${encodeURIComponent(orgId)}&sourceId=${encodeURIComponent(
+      sourceId,
+    )}&tool=${encodeURIComponent(tool)}`,
+    { method: "DELETE" },
+  );
+  return guards;
 }
 
 export async function removeThread(orgId: string, id: string): Promise<void> {
@@ -151,6 +163,13 @@ export function fileRawUrl(orgId: string, fileId: string): string {
   return `/api/files/${encodeURIComponent(fileId)}?orgId=${encodeURIComponent(
     orgId,
   )}&raw=1`;
+}
+
+/** A square crop of an image, for a list that shows one of them per row. */
+export function fileThumbUrl(orgId: string, fileId: string): string {
+  return `/api/files/${encodeURIComponent(fileId)}?orgId=${encodeURIComponent(
+    orgId,
+  )}&thumb=1`;
 }
 
 export async function uploadFile(

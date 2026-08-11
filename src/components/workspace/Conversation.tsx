@@ -63,15 +63,15 @@ function TraceLine({
           className="flex w-full items-center gap-2 px-3 py-2 text-left"
         >
           <Avatar seed={step.agentId} size={20} />
-          <span className="min-w-0 flex-1 truncate text-[12px] text-ink">
+          <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
             {step.role || "Agente"} respondió
           </span>
-          <span className="text-[11px] text-faint">
+          <span className="text-[12px] text-faint">
             {open ? "Ocultar" : "Ver"}
           </span>
         </button>
         {open ? (
-          <Markdown className="border-t border-hairline px-3 py-2.5 text-[12px] text-dim">
+          <Markdown className="border-t border-hairline px-3 py-2.5 text-[13px] text-dim">
             {step.text}
           </Markdown>
         ) : null}
@@ -83,7 +83,7 @@ function TraceLine({
 
   const line = (
     <p
-      className={`flex gap-2 px-1 text-[12px] leading-relaxed ${
+      className={`flex gap-2 px-1 text-[13px] leading-relaxed ${
         failed ? "text-danger" : "text-faint"
       }`}
     >
@@ -101,7 +101,7 @@ function TraceLine({
         {/* Whose data it was, as a mark on the line rather than one more word
           in it: the summary says what happened, the chip says where. */}
         {step.source ? (
-          <span className="ml-1.5 inline-flex items-center gap-1 rounded-md border border-hairline bg-panel px-1.5 py-px align-[-4px] text-[11px] text-dim">
+          <span className="ml-1.5 inline-flex items-center gap-1 rounded-md border border-hairline bg-panel px-1.5 py-px align-[-4px] text-[12px] text-dim">
             <SourceIcon
               label={step.source.label}
               url={step.source.url}
@@ -118,7 +118,7 @@ function TraceLine({
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="ml-1.5 text-[11px] text-faint underline decoration-hairline underline-offset-2 transition-colors hover:text-ink"
+            className="ml-1.5 text-[12px] text-faint underline decoration-hairline underline-offset-2 transition-colors hover:text-ink"
           >
             {open
               ? "ocultar"
@@ -144,7 +144,7 @@ function TraceLine({
         rather than scrolls, and is boxed: some of them are thousands of lines
         and the rest of the trace still has to be readable. */}
       {open ? (
-        <pre className="mt-1.5 ml-6 max-h-96 overflow-auto rounded-lg border border-hairline bg-panel px-3 py-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-dim">
+        <pre className="mt-1.5 ml-6 max-h-96 overflow-auto rounded-lg border border-hairline bg-panel px-3 py-2.5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-dim">
           {step.detail}
         </pre>
       ) : null}
@@ -184,7 +184,7 @@ function Exchange({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="mt-3 text-[12px] text-faint transition-colors hover:text-ink"
+          className="mt-3 text-[13px] text-faint transition-colors hover:text-ink"
         >
           {open
             ? "Ocultar los pasos"
@@ -218,7 +218,7 @@ function Exchange({
             reasoning, cut to its end so a long deliberation doesn't push the
             rest of the corrida off screen. */}
           {thinking ? (
-            <p className="px-1 text-[12px] leading-relaxed whitespace-pre-line text-faint">
+            <p className="px-1 text-[13px] leading-relaxed whitespace-pre-line text-faint">
               {thinking.length > TAIL ? `…${thinking.slice(-TAIL)}` : thinking}
             </p>
           ) : null}
@@ -241,7 +241,7 @@ function Exchange({
         just stops growing. */}
       {turn.answer ? (
         <div className="mt-7 rounded-xl border border-hairline bg-panel px-5 py-4">
-          <p className="text-[11px] tracking-wide text-faint uppercase">
+          <p className="text-[12px] tracking-wide text-faint uppercase">
             {companyName || "La empresa"}
           </p>
           <Markdown className="mt-2 text-[14px] text-ink">
@@ -251,7 +251,7 @@ function Exchange({
       ) : null}
 
       {tokens > 0 ? (
-        <p className="mt-3 px-1 text-[11px] text-faint">
+        <p className="mt-3 px-1 text-[12px] text-faint">
           {formatTokens(tokens)} tokens · {formatCost(usage.cost)}
           {cacheHit > 0 ? ` · ${cacheHit}% desde caché` : ""}
         </p>
@@ -311,11 +311,7 @@ export default function Conversation({
           ) : (
             <div className="flex flex-col gap-12">
               {turns.map((turn, index) => (
-                <Exchange
-                  key={index}
-                  companyName={companyName}
-                  turn={turn}
-                />
+                <Exchange key={index} companyName={companyName} turn={turn} />
               ))}
               {task !== null ? (
                 <Exchange

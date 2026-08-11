@@ -51,7 +51,8 @@ function permissions(value: unknown): LibraryPermission[] {
  * neither is trusted. Throws with a message meant for the user.
  */
 export function parseSnapshot(body: unknown): OrgSnapshot {
-  if (typeof body !== "object" || body === null) throw new Error("Pedido vacío.");
+  if (typeof body !== "object" || body === null)
+    throw new Error("Pedido vacío.");
   const raw = body as Record<string, unknown>;
 
   if (!Array.isArray(raw.agents) || raw.agents.length === 0) {

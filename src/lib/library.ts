@@ -79,7 +79,11 @@ function adoptLegacyOrg(): void {
     const parsed: unknown = JSON.parse(raw);
     if (!isOrgChartFile(parsed)) return;
     const step = Number(window.localStorage.getItem(LEGACY_STEP_KEY));
-    saveOrgFile(newId("org"), migrateOrgFile(parsed), step >= 1 && step <= 5 ? step : 5);
+    saveOrgFile(
+      newId("org"),
+      migrateOrgFile(parsed),
+      step >= 1 && step <= 5 ? step : 5,
+    );
   } catch {
     // A corrupt legacy blob is simply dropped.
   } finally {

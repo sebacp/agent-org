@@ -73,7 +73,7 @@ export default function PickCard({
 
 export function Tag({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-full bg-raised px-2 py-0.5 text-[11px] text-dim">
+    <span className="rounded-full bg-raised px-2 py-0.5 text-[12px] text-dim">
       {children}
     </span>
   );

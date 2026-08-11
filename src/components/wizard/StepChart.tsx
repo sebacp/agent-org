@@ -65,7 +65,7 @@ export default function StepChart({
 
           {/* The whole chart is built with the handles, and nothing on the
               canvas says what they do. */}
-          <span className="ml-auto hidden text-[12px] text-faint lg:block">
+          <span className="ml-auto hidden text-[13px] text-faint lg:block">
             {nodes.length} {nodes.length === 1 ? "agente" : "agentes"} en{" "}
             {departments.length} {departments.length === 1 ? "área" : "áreas"} ·
             tocá a uno para ajustarlo, arrastrá de un punto a otro para

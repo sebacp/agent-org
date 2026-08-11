@@ -60,8 +60,10 @@ async function write(orgId: string, list: Automation[]): Promise<void> {
 
 function clean(draft: Partial<AutomationDraft>): Partial<AutomationDraft> {
   const out: Partial<AutomationDraft> = {};
-  if (typeof draft.name === "string") out.name = draft.name.trim().slice(0, 120);
-  if (typeof draft.cron === "string") out.cron = draft.cron.trim().slice(0, 120);
+  if (typeof draft.name === "string")
+    out.name = draft.name.trim().slice(0, 120);
+  if (typeof draft.cron === "string")
+    out.cron = draft.cron.trim().slice(0, 120);
   if (typeof draft.timezone === "string") {
     out.timezone = draft.timezone.trim().slice(0, 64);
   }

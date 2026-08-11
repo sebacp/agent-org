@@ -41,7 +41,8 @@ async function probe(orgId: string, source: SourceDef): Promise<SourceProbe> {
 
 function parseBody(body: unknown): SourceInput {
   const raw = (body ?? {}) as Record<string, unknown>;
-  const text = (value: unknown) => (typeof value === "string" ? value : undefined);
+  const text = (value: unknown) =>
+    typeof value === "string" ? value : undefined;
   return {
     id: text(raw.id),
     label: text(raw.label),

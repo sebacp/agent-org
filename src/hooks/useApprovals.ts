@@ -27,11 +27,11 @@ export function useApprovals(orgId: string) {
   }, [orgId]);
 
   const answer = useCallback(
-    async (id: string, ok: boolean) => {
+    async (id: string, ok: boolean, always = false) => {
       // Dropped here first: the corrida resumes the instant the server hears
       // it, and leaving the card up would invite a second press.
       setApprovals((list) => list.filter((write) => write.id !== id));
-      await answerApproval(orgId, id, ok).catch(() => false);
+      await answerApproval(orgId, id, ok, always).catch(() => false);
     },
     [orgId],
   );

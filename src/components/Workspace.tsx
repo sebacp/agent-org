@@ -65,8 +65,13 @@ export default function Workspace({ orgId }: { orgId: string }) {
   // What the agents file or leave pending arrives on its own while the run is
   // still going; the thread itself is only written once it ends.
   const start = useCallback(
-    async (task: string, fromId?: string, origin?: RunOrigin) => {
-      await run.start(task, fromId, origin);
+    async (
+      task: string,
+      fromId?: string,
+      origin?: RunOrigin,
+      into?: Thread,
+    ) => {
+      await run.start(task, fromId, origin, into);
       await threads.refresh();
     },
     [run, threads],
@@ -83,12 +88,15 @@ export default function Workspace({ orgId }: { orgId: string }) {
 
   const resumeTask = useCallback(
     (task: PendingTask) => {
-      setTab("tasks");
+      // The pendiente goes back into the conversation it came out of, so a
+      // pedido, what it got stuck on and what you answered read as one hilo.
+      // A task noted before that link existed has none, and opens its own.
+      const into = threads.threads.find((t) => t.id === task.threadId);
       void start(
         [
           `Retomá el pendiente ${task.id}: ${task.title}`,
-          // Retomar is a corrida of its own, so the agent starts with no memory
-          // of the one that got stuck: the encargo has to travel with the task.
+          // The corrida that got stuck is over, and the agent starts from
+          // nothing: the encargo has to travel with the task.
           task.assignment
             ? `Esto era lo que estabas haciendo:\n${task.assignment}`
             : null,
@@ -105,9 +113,10 @@ export default function Workspace({ orgId }: { orgId: string }) {
           .join("\n\n"),
         task.agentId,
         { kind: "task", label: task.title },
+        into,
       );
     },
-    [start],
+    [start, threads.threads],
   );
 
   const openThread = useCallback((thread: Thread) => run.show(thread), [run]);
@@ -160,7 +169,7 @@ export default function Workspace({ orgId }: { orgId: string }) {
               <button
                 type="button"
                 onClick={() => void router.push("/")}
-                className="text-[12px] text-faint transition-colors hover:text-ink"
+                className="text-[13px] text-faint transition-colors hover:text-ink"
               >
                 ‹ Empresas
               </button>
@@ -170,7 +179,7 @@ export default function Workspace({ orgId }: { orgId: string }) {
               <button
                 type="button"
                 onClick={() => setPaneOpen(true)}
-                className="ml-auto text-[12px] text-faint transition-colors hover:text-ink"
+                className="ml-auto text-[13px] text-faint transition-colors hover:text-ink"
               >
                 Contexto
               </button>
@@ -191,12 +200,13 @@ export default function Workspace({ orgId }: { orgId: string }) {
                 runs={active.runs}
                 fileCount={files.files.length}
                 filesOpen={tab === "files"}
-                blocked={tasks.tasks.filter((t) => t.state === "blocked")}
+                tasks={tasks.tasks}
                 tasksOpen={tab === "tasks"}
                 automationCount={
                   automations.automations.filter((a) => a.enabled).length
                 }
                 automationsOpen={tab === "automations"}
+                securityOpen={tab === "security"}
                 guards={guards.guards}
                 onGuards={(patch) => void guards.save(patch)}
                 onNew={newThread}
@@ -221,9 +231,14 @@ export default function Workspace({ orgId }: { orgId: string }) {
                   setTab("automations");
                   setPaneOpen(true);
                 }}
+                onSecurity={() => {
+                  setTab("security");
+                  setPaneOpen(true);
+                }}
               />
 
               <ContextPane
+                orgId={orgId}
                 tab={tab}
                 onTab={setTab}
                 open={paneOpen}
@@ -248,10 +263,18 @@ export default function Workspace({ orgId }: { orgId: string }) {
                 onResumeTask={resumeTask}
                 onRemoveTask={(id) => void tasks.remove(id)}
                 automations={automations.automations}
+                runningAutomations={active.runs
+                  .filter((r) => r.origin.kind === "automation")
+                  .map((r) => r.origin.label)}
                 onCreateAutomation={automations.create}
                 onSaveAutomation={automations.save}
                 onRunAutomation={automations.run}
                 onRemoveAutomation={(id) => void automations.remove(id)}
+                guards={guards.guards}
+                onGuards={(patch) => void guards.save(patch)}
+                onRevokeGrant={(sourceId, tool) =>
+                  void guards.revoke(sourceId, tool)
+                }
                 onOpenThread={(id) => void openThreadById(id)}
                 onEdit={() => void router.push(`/org/${orgId}/editar`)}
               />
@@ -289,7 +312,9 @@ export default function Workspace({ orgId }: { orgId: string }) {
               answer. */}
             <ApprovalBar
               approvals={approvals.approvals}
-              onAnswer={(id, ok) => void approvals.answer(id, ok)}
+              onAnswer={(id, ok, always) =>
+                void approvals.answer(id, ok, always)
+              }
             />
 
             {openFileId ? (

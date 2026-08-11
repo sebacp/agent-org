@@ -1,4 +1,5 @@
 import { fileSize, type FileMeta } from "@/lib/file-types";
+import { isGranted } from "@/lib/guard-types";
 import type { SourceRef } from "@/lib/run-types";
 import type { AllowedSource } from "@/lib/source-types";
 import type { LibraryPermission } from "@/lib/types";
@@ -227,7 +228,8 @@ export const TOOLS: ToolSchema[] = [
                   ],
                 },
                 valor: {
-                  description: "Con qué comparar. No hace falta en existe/vacio.",
+                  description:
+                    "Con qué comparar. No hace falta en existe/vacio.",
                 },
               },
               required: ["campo", "op"],
@@ -260,7 +262,7 @@ export const TOOLS: ToolSchema[] = [
     function: {
       name: "calcular",
       description:
-        "Escribí Python y te devuelvo lo que imprima. Usalo para toda cuenta que consultar_archivo no pueda decir en una sola métrica: un valor derivado de cada registro, una suma ponderada, normalizar plata a otra unidad de tiempo, cruzar dos archivos, cualquier cosa con condiciones. Y cuando lo que te piden es un listado y no un número — filtrar un volcado, juntar dos, quedarte con unas columnas —, llamá a guardar(\"título\", registros) adentro del script y queda archivado en la biblioteca de una sola vez, sin pasarte los registros por delante. Nunca imprimas un listado para después copiarlo a mano ni lo cortes en pedazos: eso es lo que guardar() evita. Es también la forma de no equivocarte: la máquina hace la aritmética y el script queda escrito en el hilo para que otro lo revise. No hagas de cabeza cuentas que puedas hacer acá.",
+        'Escribí Python y te devuelvo lo que imprima. Usalo para toda cuenta que consultar_archivo no pueda decir en una sola métrica: un valor derivado de cada registro, una suma ponderada, normalizar plata a otra unidad de tiempo, cruzar dos archivos, cualquier cosa con condiciones. Y cuando lo que te piden es un listado y no un número — filtrar un volcado, juntar dos, quedarte con unas columnas —, llamá a guardar("título", registros) adentro del script y queda archivado en la biblioteca de una sola vez, sin pasarte los registros por delante. Nunca imprimas un listado para después copiarlo a mano ni lo cortes en pedazos: eso es lo que guardar() evita. Es también la forma de no equivocarte: la máquina hace la aritmética y el script queda escrito en el hilo para que otro lo revise. No hagas de cabeza cuentas que puedas hacer acá.',
       parameters: {
         type: "object",
         properties: {
@@ -500,7 +502,11 @@ async function heldForApproval(
   ref: SourceRef,
 ): Promise<ToolOutcome | null> {
   if (source.tools.find((t) => t.name === tool)?.readOnly) return null;
-  if (!(await readGuards(orgId)).approveWrites) return null;
+  const guards = await readGuards(orgId);
+  if (!guards.approveWrites) return null;
+  // Somebody already answered this one for good. What that costs is in the
+  // seguridad panel, where it can be taken back.
+  if (isGranted(guards.grants, source.id, tool)) return null;
 
   const verdict = await askApproval(
     orgId,
@@ -509,6 +515,7 @@ async function heldForApproval(
       agentId: agent.id,
       role: agent.role,
       source: ref,
+      sourceId: source.id,
       tool,
       args: JSON.stringify(args, null, 2).slice(0, 4000),
     },
@@ -518,9 +525,7 @@ async function heldForApproval(
 
   return {
     summary:
-      verdict === "no"
-        ? `no le autorizaron ${tool}`
-        : `nadie autorizó ${tool}`,
+      verdict === "no" ? `no le autorizaron ${tool}` : `nadie autorizó ${tool}`,
     content: [
       verdict === "no"
         ? `Te dijeron que no a ${tool}. No se ejecutó y no se escribió nada.`
@@ -529,7 +534,11 @@ async function heldForApproval(
       // call came back, and the next sentence it writes is the confirmation.
       "No busques otra manera de hacer lo mismo ni sigas como si hubiera salido. Si hace falta, dejá un pendiente con crear_pendiente diciendo qué ibas a ejecutar y para qué.",
     ].join(" "),
-    detail: exchange(tool, args, verdict === "no" ? "Rechazado." : "Sin respuesta."),
+    detail: exchange(
+      tool,
+      args,
+      verdict === "no" ? "Rechazado." : "Sin respuesta.",
+    ),
     source: ref,
   };
 }
@@ -634,7 +643,11 @@ const PAGING_ARGS = new Set([...CURSOR_ARGS, "limit", "per_page", "page_size"]);
  */
 function narrowing(args: Record<string, unknown>): string {
   const kept: string[] = [];
-  const walk = (bag: Record<string, unknown>, prefix: string, depth: number) => {
+  const walk = (
+    bag: Record<string, unknown>,
+    prefix: string,
+    depth: number,
+  ) => {
     for (const [name, value] of Object.entries(bag)) {
       if (PAGING_ARGS.has(name) || value === undefined || value === null) {
         continue;
@@ -643,7 +656,8 @@ function narrowing(args: Record<string, unknown>): string {
         // The outermost bag is where the function keeps its arguments and adds
         // nothing to what any of them says; below that the name is half the
         // condition, as in created.gte.
-        if (depth < 2) walk(value, depth === 0 ? prefix : `${name}.`, depth + 1);
+        if (depth < 2)
+          walk(value, depth === 0 ? prefix : `${name}.`, depth + 1);
         continue;
       }
       // A list of fields to expand asks for more of each record, not for fewer
@@ -888,7 +902,9 @@ async function dumpFromSource(
     // to go get it: stopping at a limit has to leave somewhere to resume.
     const leaf = cursor?.at(-1) ?? "";
     if (COUNTING_ARGS.has(leaf)) {
-      const base = Number(readAt(callArgs, cursor!) ?? (leaf === "page" ? 1 : 0));
+      const base = Number(
+        readAt(callArgs, cursor!) ?? (leaf === "page" ? 1 : 0),
+      );
       pending = String(leaf === "page" ? base + 1 : base + records.length);
     } else {
       pending = extracted?.nextCursor ?? lastId(records);
@@ -961,7 +977,8 @@ async function dumpFromSource(
       narrowWarning(meta),
       meta.partial
         ? `OJO: el volcado quedó incompleto. ${meta.partial} Cualquier cifra que saques de este archivo va a estar corta: no la des como total sin decir que falta gente adentro.`
-        : stop || "Recorrí la paginación hasta el final: el volcado está completo.",
+        : stop ||
+          "Recorrí la paginación hasta el final: el volcado está completo.",
       "No leas este archivo: analizalo con consultar_archivo.",
     ]
       .filter(Boolean)
@@ -1047,7 +1064,10 @@ async function compute(
 ): Promise<ToolOutcome> {
   const script = asString(args.script).trim();
   if (!script) {
-    return { summary: "no mandó script", content: "Mandá el código en `script`." };
+    return {
+      summary: "no mandó script",
+      content: "Mandá el código en `script`.",
+    };
   }
 
   const wanted = Array.isArray(args.archivos)
@@ -1136,7 +1156,8 @@ async function compute(
   }
 
   const names = Object.keys(datasets);
-  const over = names.length > 0 ? ` sobre ${names.map((n) => `"${n}"`).join(" y ")}` : "";
+  const over =
+    names.length > 0 ? ` sobre ${names.map((n) => `"${n}"`).join(" y ")}` : "";
   const result = await runPython(script, datasets);
 
   if (!result.ok) {
@@ -1190,7 +1211,9 @@ async function compute(
       tags: ["datos", "calculado"],
       records,
     });
-    filed.push(`"${meta.title}" con ${records.toLocaleString("es-AR")} registros`);
+    filed.push(
+      `"${meta.title}" con ${records.toLocaleString("es-AR")} registros`,
+    );
 
     // A copy with a row for every row is a rewrite of the same listing, and
     // whatever it left out is gone for whoever reads the copy instead of the
@@ -1219,7 +1242,9 @@ async function compute(
   }
 
   const counted = names
-    .map((name) => `${name}: ${datasets[name].split("\n").filter(Boolean).length}`)
+    .map(
+      (name) => `${name}: ${datasets[name].split("\n").filter(Boolean).length}`,
+    )
     .join(", ");
   const wrote = filed.length > 0 ? ` · guardó ${filed.length}` : "";
   return {
@@ -1342,7 +1367,9 @@ async function queryFile(
         fixed.length > 0
           ? `Todos los registros tienen el mismo valor en ${fixed
               .map(([field, value]) => `${field}=${value}`)
-              .join(", ")}. Si la fuente tiene registros con otro valor en alguno de esos campos, no están en este archivo: no los sumes ni los descartes desde acá, porque acá no se ven.`
+              .join(
+                ", ",
+              )}. Si la fuente tiene registros con otro valor en alguno de esos campos, no están en este archivo: no los sumes ni los descartes desde acá, porque acá no se ven.`
           : "",
         sample
           ? `Un registro de ejemplo:\n${JSON.stringify(sample, null, 2).slice(0, 4_000)}`
@@ -1357,7 +1384,8 @@ async function queryFile(
   const query: Query = {
     filtros: asFilters(args.filtros),
     agruparPor: asString(args.agrupar_por) || undefined,
-    agruparComo: (asString(args.agrupar_como) || "valor") as Query["agruparComo"],
+    agruparComo: (asString(args.agrupar_como) ||
+      "valor") as Query["agruparComo"],
     metrica: (asString(args.metrica) || "contar") as Query["metrica"],
     campo: asString(args.campo) || undefined,
     limite: typeof args.limite === "number" ? args.limite : undefined,
@@ -1374,9 +1402,10 @@ async function queryFile(
   // is a metric over every group in it, and the answer below says a number
   // without saying whose.
   const named = new Set(
-    [query.agruparPor ?? "", ...(query.filtros ?? []).map((f) => f.campo)].filter(
-      Boolean,
-    ),
+    [
+      query.agruparPor ?? "",
+      ...(query.filtros ?? []).map((f) => f.campo),
+    ].filter(Boolean),
   );
   const missed = splitters(records).filter((s) => !named.has(s.field));
 
@@ -1398,10 +1427,15 @@ async function queryFile(
               (s) =>
                 `${s.field} (${s.values
                   .slice(0, 5)
-                  .map(([value, count]) => `${value}: ${count.toLocaleString("es-AR")}`)
+                  .map(
+                    ([value, count]) =>
+                      `${value}: ${count.toLocaleString("es-AR")}`,
+                  )
                   .join(", ")})`,
             )
-            .join("; ")}. Si el número de arriba no vale igual para cada uno, volvé a preguntar agrupando o filtrando por ${missed.length === 1 ? "ese campo" : "esos campos"}, y decí con qué criterio contaste.`
+            .join(
+              "; ",
+            )}. Si el número de arriba no vale igual para cada uno, volvé a preguntar agrupando o filtrando por ${missed.length === 1 ? "ese campo" : "esos campos"}, y decí con qué criterio contaste.`
         : "",
       result.skipped > 0
         ? `[${result.skipped} registros no tenían un número en "${query.campo ?? ""}" y quedaron fuera del cálculo.]`
@@ -1461,7 +1495,9 @@ export async function runTool(
           source?.tools.some((t) => t.name === remote.tool)
             ? `${remote.tool} existe en ${where} pero no te la habilitaron.`
             : "No tenés acceso a esa función.",
-          source ? `Las tuyas en ${where} son: ${source.allowed.join(", ")}.` : "",
+          source
+            ? `Las tuyas en ${where} son: ${source.allowed.join(", ")}.`
+            : "",
           "No busques otra manera de hacer lo mismo ni inventes datos que esa función te iba a dar: si te hace falta, dejalo con crear_pendiente diciendo qué función pedís y para qué.",
         ]
           .filter(Boolean)
@@ -1639,7 +1675,8 @@ export async function runTool(
       try {
         file = await download(url);
       } catch (error) {
-        const why = error instanceof Error ? error.message : "error desconocido";
+        const why =
+          error instanceof Error ? error.message : "error desconocido";
         return {
           summary: "no pudo bajar el link",
           // A mistyped link fails exactly like an expired one, and a model that
@@ -1706,6 +1743,7 @@ export async function runTool(
         agentId: agent.id,
         author: agent.role,
         area: agent.department,
+        threadId: run.threadId,
       });
       return {
         summary: `dejó pendiente "${task.title}"`,

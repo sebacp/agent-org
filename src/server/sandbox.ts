@@ -113,9 +113,16 @@ async function findPython(): Promise<string | null> {
   // process. Without one there is no safe way to run this, and the tool is
   // simply not offered — never run unpenned as a fallback.
   if (process.platform !== "darwin") return null;
-  for (const candidate of ["python3", "/opt/homebrew/bin/python3", "/usr/bin/python3"]) {
+  for (const candidate of [
+    "python3",
+    "/opt/homebrew/bin/python3",
+    "/usr/bin/python3",
+  ]) {
     try {
-      const { stdout } = await run(candidate, ["-c", "import sys; print(sys.executable)"]);
+      const { stdout } = await run(candidate, [
+        "-c",
+        "import sys; print(sys.executable)",
+      ]);
       const found = stdout.trim();
       if (found) return found;
     } catch {

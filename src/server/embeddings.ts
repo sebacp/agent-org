@@ -36,14 +36,20 @@ async function embedBatch(texts: string[]): Promise<number[][]> {
       "Content-Type": "application/json",
       Authorization: `Bearer ${process.env.OPENAI_API_KEY ?? ""}`,
     },
-    body: JSON.stringify({ model: MODEL, input: texts, dimensions: DIMENSIONS }),
+    body: JSON.stringify({
+      model: MODEL,
+      input: texts,
+      dimensions: DIMENSIONS,
+    }),
   });
 
   const body = (await response.json().catch(() => null)) as Response | null;
   if (!response.ok || !body?.data) {
     // The request carries the library's own text, and an error body can echo
     // it back, so only what the user can act on is repeated.
-    console.error(`OpenAI embeddings ${response.status}: ${body?.error?.message ?? ""}`);
+    console.error(
+      `OpenAI embeddings ${response.status}: ${body?.error?.message ?? ""}`,
+    );
     throw new EmbeddingError(
       response.status === 401 || response.status === 403
         ? "La API key de OpenAI no es válida."

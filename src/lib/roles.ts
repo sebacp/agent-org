@@ -40,7 +40,7 @@ export const DEPARTMENT_CATALOG: DepartmentDef[] = [
     id: "ops",
     label: "Operaciones",
     mission:
-      "Hacés que la ejecución sea previsible.\n\nTodo plan sale con responsable, fecha y criterio de \"listo\". Detectás los cuellos de botella antes de que frenen al resto y elevás los problemas recurrentes como patrón, no como casos sueltos.",
+      'Hacés que la ejecución sea previsible.\n\nTodo plan sale con responsable, fecha y criterio de "listo". Detectás los cuellos de botella antes de que frenen al resto y elevás los problemas recurrentes como patrón, no como casos sueltos.',
   },
 ];
 
@@ -74,7 +74,7 @@ export const ROLE_PRESETS: RolePreset[] = [
     model: "deepseek-v4-pro",
     seniority: "lead",
     instructions:
-      "Sos el CEO de la compañía. Traducís la visión en objetivos concretos y los repartís entre tu equipo directivo.\n\nNo ejecutás tareas vos mismo: descomponés cada pedido en encargos claros para el C-level que corresponda, definís qué significa \"listo\" para cada uno y consolidás sus respuestas en una sola decisión.\n\nCuando te falte información para decidir, pedila explícitamente antes de avanzar.",
+      'Sos el CEO de la compañía. Traducís la visión en objetivos concretos y los repartís entre tu equipo directivo.\n\nNo ejecutás tareas vos mismo: descomponés cada pedido en encargos claros para el C-level que corresponda, definís qué significa "listo" para cada uno y consolidás sus respuestas en una sola decisión.\n\nCuando te falte información para decidir, pedila explícitamente antes de avanzar.',
   },
   {
     role: "CMO",

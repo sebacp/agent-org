@@ -8,12 +8,7 @@ import type {
 import type { RunUsage, TokenUsage } from "@/lib/usage";
 
 export type AgentStatus =
-  | "idle"
-  | "planning"
-  | "working"
-  | "waiting"
-  | "done"
-  | "error";
+  "idle" | "planning" | "working" | "waiting" | "done" | "error";
 
 export interface RunAgent {
   id: string;
@@ -114,7 +109,12 @@ export type RunEvent =
    * came before. Only the root emits these: a delegate's work is read as a step
    * once it is finished, not letter by letter.
    */
-  | { type: "stream"; agentId: string; phase: "thinking" | "answer"; text: string }
+  | {
+      type: "stream";
+      agentId: string;
+      phase: "thinking" | "answer";
+      text: string;
+    }
   /** One agent gave up; the run keeps going without it. */
   | { type: "failed"; agentId: string; message: string }
   | { type: "done"; text: string }

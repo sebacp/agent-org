@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { deleteFile, getFile, readFileBytes } from "@/server/files";
+import { isImage } from "@/lib/file-types";
+import { deleteFile, getFile, readFileBytes, readThumb } from "@/server/files";
 
 /** The viewer only has to be readable, so a big export travels as a head. */
 const PREVIEW_CHARS = 40_000;
@@ -27,6 +28,21 @@ export default async function handler(
       return;
     }
 
+    // The library shows a picture of every image on the shelf, and the shelf
+    // is one request per row: sending the original for that would be megabytes
+    // to draw something the size of a favicon.
+    if (req.query.thumb !== undefined && isImage(file)) {
+      const thumb = await readThumb(orgId, fileId);
+      if (!thumb) {
+        res.status(404).json({ error: "No pude hacer la miniatura." });
+        return;
+      }
+      res.setHeader("Content-Type", "image/webp");
+      res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+      res.status(200).send(thumb);
+      return;
+    }
+
     // What isn't text has to come back as itself for an <img> or a download to
     // do anything with it. A body never changes once filed, so it caches.
     if (req.query.raw !== undefined && file.mime) {
@@ -47,7 +63,8 @@ export default async function handler(
     });
   } catch (error) {
     res.status(400).json({
-      error: error instanceof Error ? error.message : "No pude leer el archivo.",
+      error:
+        error instanceof Error ? error.message : "No pude leer el archivo.",
     });
   }
 }

@@ -56,7 +56,9 @@ function RailTab({
       type="button"
       onClick={onClick}
       className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors ${
-        open ? "bg-raised text-ink" : "text-dim hover:bg-raised/60 hover:text-ink"
+        open
+          ? "bg-raised text-ink"
+          : "text-dim hover:bg-raised/60 hover:text-ink"
       }`}
     >
       <span className={open ? "text-dim" : "text-faint"}>
@@ -64,7 +66,7 @@ function RailTab({
       </span>
       <span className="min-w-0 flex-1 truncate text-left">{label}</span>
       {count === undefined ? null : (
-        <span className={`text-[12px] ${urgent ? "text-ink" : "text-faint"}`}>
+        <span className={`text-[13px] ${urgent ? "text-ink" : "text-faint"}`}>
           {count}
         </span>
       )}
@@ -80,12 +82,13 @@ interface ThreadRailProps {
   runs: ActiveRun[];
   fileCount: number;
   filesOpen: boolean;
-  /** Only the ones waiting on you; the rest need no nudge. */
-  blocked: PendingTask[];
+  /** All of them, so a hilo can say whether it is still waiting on something. */
+  tasks: PendingTask[];
   tasksOpen: boolean;
   /** Only the ones still armed; a paused one is not going to wake up. */
   automationCount: number;
   automationsOpen: boolean;
+  securityOpen: boolean;
   /** The tope and what the month has spent against it. */
   guards: GuardState;
   onGuards: (patch: Partial<Guards>) => void;
@@ -100,6 +103,7 @@ interface ThreadRailProps {
   onFiles: () => void;
   onTasks: () => void;
   onAutomations: () => void;
+  onSecurity: () => void;
 }
 
 export default function ThreadRail({
@@ -109,10 +113,11 @@ export default function ThreadRail({
   runs,
   fileCount,
   filesOpen,
-  blocked,
+  tasks,
   tasksOpen,
   automationCount,
   automationsOpen,
+  securityOpen,
   guards,
   onGuards,
   onNew,
@@ -125,9 +130,38 @@ export default function ThreadRail({
   onFiles,
   onTasks,
   onAutomations,
+  onSecurity,
 }: ThreadRailProps) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
-  const busy = runs.length > 0 || blocked.length > 0;
+  const blocked = tasks.filter((t) => t.state === "blocked");
+
+  // Which hilos are still short of something. `open` counts too: you answered
+  // it, but nobody has retomado it yet, so the work it stopped is still stopped.
+  const waiting = new Set(
+    tasks.filter((t) => t.state !== "done").map((t) => t.threadId),
+  );
+
+  const live = new Map(runs.map((run) => [run.threadId, run]));
+
+  // One row per hilo, and a follow-up is one more pedido inside the one that is
+  // already there. A corrida is only written to disk when it ends, so one still
+  // going stands in for its own hilo until then — otherwise the same
+  // conversation shows up twice, once as what is running and once as what was
+  // saved before it.
+  const rows: Thread[] = [
+    ...runs
+      .filter((run) => !threads.some((t) => t.id === run.threadId))
+      .map((run) => ({
+        id: run.threadId,
+        title: run.origin.label || run.title,
+        origin: run.origin,
+        turns: [],
+        createdAt: run.startedAt,
+      })),
+    ...threads,
+  ];
+  // Stable, so everything else keeps the order the list came in.
+  rows.sort((a, b) => Number(live.has(b.id)) - Number(live.has(a.id)));
 
   // A quiet rail redraws nothing; while something runs the clock advances once
   // a tick, and the labels below are coarse enough that the lag never shows.
@@ -144,7 +178,7 @@ export default function ThreadRail({
         <button
           type="button"
           onClick={onLibrary}
-          className="text-[12px] text-faint transition-colors hover:text-ink"
+          className="text-[13px] text-faint transition-colors hover:text-ink"
         >
           ‹ Empresas
         </button>
@@ -174,7 +208,7 @@ export default function ThreadRail({
         />
         <RailTab
           icon="tasks"
-          label="Pendientes"
+          label="Inbox"
           count={blocked.length}
           urgent={blocked.length > 0}
           open={tasksOpen}
@@ -194,121 +228,91 @@ export default function ThreadRail({
           open={automationsOpen}
           onClick={onAutomations}
         />
+        <RailTab
+          icon="security"
+          label="Seguridad"
+          count={guards.grants.length}
+          open={securityOpen}
+          onClick={onSecurity}
+        />
       </nav>
 
       <nav className="min-h-0 flex-1 overflow-y-auto border-t border-hairline px-3 py-3">
-        {busy ? (
-          <>
-            <p className="px-3 pb-1 text-[10px] tracking-wide text-faint uppercase">
-              Ahora
-            </p>
+        {rows.map((thread) => {
+          const run = live.get(thread.id);
+          // Amber while the company is on it or while it is short of something,
+          // green once it is neither. The pulse is the difference between the
+          // two ambers: one is moving, the other is stopped waiting on you.
+          const dot = run
+            ? "animate-pulse bg-warn"
+            : waiting.has(thread.id)
+              ? "bg-warn"
+              : "bg-ok";
 
-            {runs.map((run) => (
+          return (
+            <div key={thread.id} className="group relative">
               <button
-                key={run.threadId}
                 type="button"
-                onClick={() => onOpenRun(run)}
-                className={`relative block w-full rounded-lg px-3 py-2 pl-6 text-left transition-colors ${
-                  activeId === run.threadId
-                    ? "bg-raised"
-                    : "hover:bg-raised/60"
+                onClick={() => (run ? onOpenRun(run) : onOpen(thread))}
+                className={`w-full rounded-lg px-3 py-2 pr-7 pl-6 text-left transition-colors ${
+                  activeId === thread.id
+                    ? "bg-raised text-ink"
+                    : "text-dim hover:bg-raised/60 hover:text-ink"
                 }`}
               >
-                <span className="absolute top-[13px] left-3 size-1.5 animate-pulse rounded-full bg-ink/50" />
-                <span className="block truncate text-[13px] leading-snug text-ink">
-                  {run.origin.label || run.title}
+                <span
+                  className={`absolute top-[13px] left-3 size-1.5 rounded-full ${dot}`}
+                />
+                {/* The hilo keeps the name of the pedido that opened it: what
+                  is running now is one more message inside it, not a new one. */}
+                <span className="block truncate text-[13px] leading-snug">
+                  {thread.origin?.label || thread.title}
                 </span>
-                <span className="mt-0.5 block text-[11px] text-faint">
-                  {ORIGIN[run.origin.kind]} · {agoLabel(run.startedAt, now)}
-                </span>
-              </button>
-            ))}
-
-            {/* A trabado is the only thing here that needs you rather than the
-              company, so it goes to the pane that lets you answer it. */}
-            {blocked.map((task) => (
-              <button
-                key={task.id}
-                type="button"
-                onClick={onTasks}
-                className="relative block w-full rounded-lg px-3 py-2 pl-6 text-left transition-colors hover:bg-raised/60"
-              >
-                {/* The one bit of color in the rail: the dot is what says this
-                  one stopped and is not going to start again on its own. */}
-                <span className="absolute top-[13px] left-3 size-1.5 rounded-full bg-warn" />
-                <span className="block truncate text-[13px] leading-snug text-ink">
-                  {task.title}
-                </span>
-                <span className="mt-0.5 block text-[11px] text-faint">
-                  te está esperando
+                <span className="mt-0.5 block text-[12px] text-faint">
+                  {[
+                    ORIGIN[thread.origin?.kind ?? "manual"],
+                    run
+                      ? agoLabel(run.startedAt, now)
+                      : whenLabel(thread.createdAt),
+                    // How long the conversation got, which only says something
+                    // once it went past the pedido that opened it.
+                    thread.turns.length > 1
+                      ? `${thread.turns.length} pedidos`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </span>
               </button>
-            ))}
 
-            <p className="px-3 pt-4 pb-1 text-[10px] tracking-wide text-faint uppercase">
-              Antes
-            </p>
-          </>
-        ) : null}
+              {confirmId === thread.id ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onRemove(thread.id);
+                    setConfirmId(null);
+                  }}
+                  className="absolute top-2 right-2 text-[12px] text-danger"
+                >
+                  Borrar
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  aria-label="Borrar hilo"
+                  onClick={() => setConfirmId(thread.id)}
+                  onBlur={() => setConfirmId(null)}
+                  className="absolute top-2 right-2 text-[13px] text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-ink focus:opacity-100"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          );
+        })}
 
-        {threads.map((thread) => (
-          <div key={thread.id} className="group relative">
-            <button
-              type="button"
-              onClick={() => onOpen(thread)}
-              className={`w-full rounded-lg px-3 py-2 pr-7 text-left transition-colors ${
-                activeId === thread.id
-                  ? "bg-raised text-ink"
-                  : "text-dim hover:bg-raised/60 hover:text-ink"
-              }`}
-            >
-              {/* An automation or a retomada names itself; only a pedido you
-                typed has nothing better than its own first words. */}
-              <span className="block truncate text-[13px] leading-snug">
-                {thread.origin?.label || thread.title}
-              </span>
-              <span className="mt-0.5 block text-[11px] text-faint">
-                {[
-                  ORIGIN[thread.origin?.kind ?? "manual"],
-                  whenLabel(thread.createdAt),
-                  // How long the conversation got, which only says something
-                  // once it went past the pedido that opened it.
-                  thread.turns.length > 1
-                    ? `${thread.turns.length} pedidos`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </span>
-            </button>
-
-            {confirmId === thread.id ? (
-              <button
-                type="button"
-                onClick={() => {
-                  onRemove(thread.id);
-                  setConfirmId(null);
-                }}
-                className="absolute top-2 right-2 text-[11px] text-danger"
-              >
-                Borrar
-              </button>
-            ) : (
-              <button
-                type="button"
-                aria-label="Borrar hilo"
-                onClick={() => setConfirmId(thread.id)}
-                onBlur={() => setConfirmId(null)}
-                className="absolute top-2 right-2 text-[13px] text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-ink focus:opacity-100"
-              >
-                ×
-              </button>
-            )}
-          </div>
-        ))}
-
-        {threads.length === 0 ? (
-          <p className="px-3 py-6 text-[12px] leading-relaxed text-faint">
+        {rows.length === 0 ? (
+          <p className="px-3 py-6 text-[13px] leading-relaxed text-faint">
             Todavía no le pediste nada a la empresa.
           </p>
         ) : null}

@@ -1,27 +1,33 @@
 import { useState } from "react";
+import Avatar from "@/components/ui/Avatar";
 import Button from "@/components/ui/Button";
 import type { PendingTask, TaskAttachment } from "@/lib/task-types";
 
-/** A blocked one is the only kind that stops until you do something. */
-const MARK: Record<PendingTask["state"], string> = {
-  blocked: "bg-warn",
-  open: "border border-ink/40 bg-ink/40",
-  done: "border border-faint bg-faint",
-};
+const WHEN = new Intl.DateTimeFormat("es-AR", {
+  day: "numeric",
+  month: "short",
+});
+
+const FULL_WHEN = new Intl.DateTimeFormat("es-AR", {
+  day: "numeric",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+function whenLabel(iso: string, full = false): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return (full ? FULL_WHEN : WHEN).format(date);
+}
 
 /** Same shape as a `secondary` Button, for the label a file input needs. */
 const UPLOAD =
-  "inline-flex cursor-pointer items-center rounded-md border border-hairline bg-panel px-2.5 py-1 text-[12px] text-ink transition-colors hover:bg-raised";
+  "inline-flex cursor-pointer items-center rounded-md border border-hairline bg-panel px-2.5 py-1 text-[13px] text-ink transition-colors hover:bg-raised";
 
-const LABEL: Record<PendingTask["state"], string> = {
-  blocked: "esperando tu respuesta",
-  open: "listo para retomar",
-  done: "resuelto",
-};
-
-const EMPTY: Record<"pending" | "done", string> = {
-  pending:
-    "Nada trabado. Cuando a un agente le falte un dato o un acceso lo va a anotar acá en vez de inventarlo.",
+const EMPTY: Record<"inbox" | "done", string> = {
+  inbox:
+    "Bandeja vacía. Cuando a un agente le falte un dato o un acceso te va a escribir acá en vez de inventarlo.",
   done: "Todavía no se resolvió ninguno.",
 };
 
@@ -42,25 +48,27 @@ export default function TaskBoard({
   onResume,
   onRemove,
 }: TaskBoardProps) {
-  const [showing, setShowing] = useState<"pending" | "done">("pending");
-  const [editing, setEditing] = useState<string | null>(null);
+  const [showing, setShowing] = useState<"inbox" | "done">("inbox");
+  const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [attached, setAttached] = useState<TaskAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
+  // Opening a message is what loads the composer, the way a reply box comes up
+  // already holding whatever draft was left in it.
   const open = (task: PendingTask) => {
-    setEditing(task.id);
+    setOpenId(task.id);
     setDraft(task.answer);
     setAttached(task.attachments);
     setFailure(null);
   };
 
-  const save = (id: string) => {
+  const send = (task: PendingTask) => {
     if (draft.trim() || attached.length) {
-      onAnswer(id, draft.trim(), attached);
+      onAnswer(task.id, draft.trim(), attached);
     }
-    setEditing(null);
+    setOpenId(null);
   };
 
   const pick = async (task: PendingTask, file: File | undefined) => {
@@ -78,16 +86,17 @@ export default function TaskBoard({
   };
 
   const done = tasks.filter((t) => t.state === "done");
-  const pending = tasks.filter((t) => t.state !== "done");
-  const visible = showing === "done" ? done : pending;
+  const inbox = tasks.filter((t) => t.state !== "done");
+  const unread = tasks.filter((t) => t.state === "blocked").length;
+  const visible = showing === "done" ? done : inbox;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex gap-1 border-b border-hairline px-3 py-2.5">
         {(
           [
-            ["pending", "Pendientes", pending.length],
-            ["done", "Resueltas", done.length],
+            ["inbox", "Recibidos", inbox.length],
+            ["done", "Resueltos", done.length],
           ] as const
         ).map(([id, label, count]) => (
           <button
@@ -95,7 +104,7 @@ export default function TaskBoard({
             type="button"
             onClick={() => {
               setShowing(id);
-              setEditing(null);
+              setOpenId(null);
             }}
             className={`rounded-lg px-3 py-1.5 text-[13px] transition-colors ${
               showing === id
@@ -104,170 +113,217 @@ export default function TaskBoard({
             }`}
           >
             {label} · {count}
+            {id === "inbox" && unread ? (
+              <span className="ml-1.5 inline-block size-1.5 rounded-full bg-warn align-[2px]" />
+            ) : null}
           </button>
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {visible.length === 0 ? (
-          <p className="px-3 py-8 text-[12px] leading-relaxed text-faint">
+          <p className="px-6 py-8 text-[13px] leading-relaxed text-faint">
             {EMPTY[showing]}
           </p>
         ) : null}
 
-        {visible.map((task) => (
-          <div key={task.id} className="group relative px-3 py-3">
-            <span
-              className={`absolute top-4 left-0 size-1.5 rounded-full ${MARK[task.state]}`}
-            />
-            <p
-              className={`pr-5 text-[13px] leading-snug ${
-                task.state === "done" ? "text-faint line-through" : "text-ink"
+        {visible.map((task) => {
+          const reading = openId === task.id;
+          // Unanswered is the unread one: it is the only state where the
+          // company is stopped waiting on something only you have.
+          const unanswered = task.state === "blocked";
+
+          return (
+            <article
+              key={task.id}
+              className={`group relative border-b border-hairline transition-colors ${
+                reading ? "bg-raised/40" : ""
               }`}
             >
-              {task.title}
-            </p>
-            <p className="mt-0.5 text-[11px] text-faint">
-              {[task.author, task.area, LABEL[task.state]]
-                .filter(Boolean)
-                .join(" · ")}
-            </p>
+              <button
+                type="button"
+                onClick={() => (reading ? setOpenId(null) : open(task))}
+                className="flex w-full items-start gap-2.5 px-4 py-3 text-left"
+              >
+                <Avatar seed={task.agentId} size={26} className="mt-px" />
 
-            <button
-              type="button"
-              aria-label="Borrar pendiente"
-              onClick={() => onRemove(task.id)}
-              className="absolute top-2.5 right-0 text-[13px] text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-danger focus:opacity-100"
-            >
-              ×
-            </button>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline gap-2">
+                    <span
+                      className={`min-w-0 flex-1 truncate text-[13px] ${
+                        unanswered ? "font-medium text-ink" : "text-dim"
+                      }`}
+                    >
+                      {task.author || "Un agente"}
+                      {task.area ? (
+                        <span className="text-faint"> · {task.area}</span>
+                      ) : null}
+                    </span>
+                    <span className="shrink-0 text-[12px] text-faint">
+                      {whenLabel(task.createdAt)}
+                    </span>
+                  </span>
 
-            {/* What it was for. A "falta el token de staging" is unanswerable
-              without knowing what the agent was trying to do with it. */}
-            {task.assignment && task.state !== "done" ? (
-              <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-faint">
-                {task.assignment}
-              </p>
-            ) : null}
-            {/* Resolved keeps the question: an answer alone says nothing. */}
-            <p
-              className={`mt-2 text-[12px] leading-relaxed whitespace-pre-line ${
-                task.state === "done" ? "text-faint" : "text-dim"
-              }`}
-            >
-              {task.need}
-            </p>
-
-            {task.answer && editing !== task.id ? (
-              <p className="mt-2 border-l border-hairline pl-2.5 text-[12px] leading-relaxed whitespace-pre-line text-dim">
-                {task.answer}
-              </p>
-            ) : null}
-
-            {task.attachments.length > 0 && editing !== task.id ? (
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {task.attachments.map((file) => (
-                  <button
-                    key={file.id}
-                    type="button"
-                    onClick={() => onOpenFile(file.id)}
-                    className="max-w-full truncate rounded-md border border-hairline px-1.5 py-0.5 text-[11px] text-dim transition-colors hover:border-faint hover:text-ink"
+                  <span
+                    className={`mt-0.5 block truncate text-[13px] leading-snug ${
+                      unanswered ? "text-ink" : "text-dim"
+                    }`}
                   >
-                    {file.title}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+                    {task.title}
+                  </span>
 
-            {editing === task.id ? (
-              <div className="mt-2">
-                <textarea
-                  autoFocus
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  rows={3}
-                  placeholder="Lo que te pidieron, o dónde encontrarlo."
-                  className="w-full resize-none rounded-lg border border-hairline bg-panel px-2.5 py-2 text-[12px] leading-relaxed text-ink outline-none placeholder:text-faint focus:border-faint"
-                />
+                  {/* The preview line, which is what an inbox is for: enough of
+                    the body to know whether this one needs you now. */}
+                  {reading ? null : (
+                    <span className="mt-0.5 block truncate text-[13px] text-faint">
+                      {task.answer || task.need}
+                    </span>
+                  )}
+                </span>
 
-                {attached.length > 0 ? (
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {attached.map((file) => (
-                      <span
-                        key={file.id}
-                        className="flex max-w-full items-center gap-1 rounded-md border border-hairline px-1.5 py-0.5 text-[11px] text-dim"
-                      >
-                        <span className="truncate">{file.title}</span>
-                        <button
-                          type="button"
-                          aria-label="Quitar adjunto"
-                          onClick={() =>
-                            setAttached((c) => c.filter((a) => a.id !== file.id))
-                          }
-                          className="text-faint transition-colors hover:text-danger"
+                {unanswered ? (
+                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-warn" />
+                ) : null}
+              </button>
+
+              <button
+                type="button"
+                aria-label="Borrar mensaje"
+                onClick={() => onRemove(task.id)}
+                className="absolute right-3 bottom-2 text-[13px] text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-danger focus:opacity-100"
+              >
+                ×
+              </button>
+
+              {reading ? (
+                <div className="px-4 pb-3 pl-[58px]">
+                  <p className="text-[12px] text-faint">
+                    {whenLabel(task.createdAt, true)}
+                  </p>
+
+                  {/* What it was for. A "falta el token de staging" is
+                    unanswerable without knowing what it was needed for. */}
+                  {task.assignment ? (
+                    <p className="mt-2 border-l border-hairline pl-2.5 text-[12px] leading-relaxed text-faint">
+                      {task.assignment}
+                    </p>
+                  ) : null}
+
+                  <p className="mt-2 text-[13px] leading-relaxed whitespace-pre-line text-dim">
+                    {task.need}
+                  </p>
+
+                  {task.state === "done" ? (
+                    <>
+                      <p className="mt-3 border-l border-hairline pl-2.5 text-[13px] leading-relaxed whitespace-pre-line text-dim">
+                        {task.answer}
+                      </p>
+                      <Chips files={task.attachments} onOpenFile={onOpenFile} />
+                    </>
+                  ) : (
+                    <div className="mt-3">
+                      <textarea
+                        autoFocus
+                        value={draft}
+                        onChange={(event) => setDraft(event.target.value)}
+                        rows={3}
+                        placeholder="Respondele…"
+                        className="w-full resize-none rounded-lg border border-hairline bg-panel px-2.5 py-2 text-[13px] leading-relaxed text-ink outline-none placeholder:text-faint focus:border-faint"
+                      />
+
+                      {attached.length > 0 ? (
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          {attached.map((file) => (
+                            <span
+                              key={file.id}
+                              className="flex max-w-full items-center gap-1 rounded-md border border-hairline px-1.5 py-0.5 text-[12px] text-dim"
+                            >
+                              <span className="truncate">{file.title}</span>
+                              <button
+                                type="button"
+                                aria-label="Quitar adjunto"
+                                onClick={() =>
+                                  setAttached((current) =>
+                                    current.filter((a) => a.id !== file.id),
+                                  )
+                                }
+                                className="text-faint transition-colors hover:text-danger"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {failure ? (
+                        <p className="mt-1.5 text-[12px] text-danger">
+                          {failure}
+                        </p>
+                      ) : null}
+
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          onClick={() => send(task)}
                         >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-
-                {failure ? (
-                  <p className="mt-1.5 text-[11px] text-danger">{failure}</p>
-                ) : null}
-
-                <div className="mt-2 flex gap-2">
-                  <label className={UPLOAD}>
-                    {uploading ? "Subiendo…" : "Adjuntar"}
-                    <input
-                      type="file"
-                      accept=".csv,.tsv,.txt,.md,.json,.yaml,.yml,.log,text/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = "";
-                        void pick(task, file);
-                      }}
-                    />
-                  </label>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={() => save(task.id)}
-                  >
-                    Guardar
-                  </Button>
-                  <Button size="sm" onClick={() => setEditing(null)}>
-                    Cancelar
-                  </Button>
+                          {task.answer ? "Guardar" : "Responder"}
+                        </Button>
+                        <label className={UPLOAD}>
+                          {uploading ? "Subiendo…" : "Adjuntar"}
+                          <input
+                            type="file"
+                            accept=".csv,.tsv,.txt,.md,.json,.yaml,.yml,.log,text/*"
+                            className="hidden"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              event.target.value = "";
+                              void pick(task, file);
+                            }}
+                          />
+                        </label>
+                        {/* Answering files the message; the corrida it stopped
+                          is a separate one, and only this starts it again. */}
+                        {task.state === "open" ? (
+                          <Button size="sm" onClick={() => onResume(task)}>
+                            Retomar
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ) : (
-              <div className="mt-2 flex gap-2">
-                {task.state === "done" ? null : (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => open(task)}
-                  >
-                    {task.answer ? "Editar respuesta" : "Contestar"}
-                  </Button>
-                )}
-                {task.state === "open" ? (
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={() => onResume(task)}
-                  >
-                    Retomar
-                  </Button>
-                ) : null}
-              </div>
-            )}
-          </div>
-        ))}
+              ) : null}
+            </article>
+          );
+        })}
       </div>
+    </div>
+  );
+}
+
+function Chips({
+  files,
+  onOpenFile,
+}: {
+  files: TaskAttachment[];
+  onOpenFile: (fileId: string) => void;
+}) {
+  if (files.length === 0) return null;
+
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1.5 pl-2.5">
+      {files.map((file) => (
+        <button
+          key={file.id}
+          type="button"
+          onClick={() => onOpenFile(file.id)}
+          className="max-w-full truncate rounded-md border border-hairline px-1.5 py-0.5 text-[12px] text-dim transition-colors hover:border-faint hover:text-ink"
+        >
+          {file.title}
+        </button>
+      ))}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchGuards, saveGuards } from "@/lib/api";
+import { fetchGuards, revokeGrant, saveGuards } from "@/lib/api";
 import {
   DEFAULT_GUARDS,
   type GuardState,
@@ -39,5 +39,12 @@ export function useGuards(orgId: string) {
     [orgId],
   );
 
-  return { guards, save, refresh };
+  const revoke = useCallback(
+    async (sourceId: string, tool: string) => {
+      setGuards(await revokeGrant(orgId, sourceId, tool));
+    },
+    [orgId],
+  );
+
+  return { guards, save, revoke, refresh };
 }

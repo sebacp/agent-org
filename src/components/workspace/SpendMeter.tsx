@@ -52,11 +52,13 @@ export default function SpendMeter({
         className="w-full rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-raised/60"
       >
         <span className="flex items-baseline gap-1.5">
-          <span className="text-[12px] text-dim">
+          <span className="text-[13px] text-dim">
             {formatCost(guards.spent)}
           </span>
-          <span className="text-[11px] text-faint">
-            {left === null ? "este mes · sin tope" : `de ${formatCost(guards.monthlyCap)}`}
+          <span className="text-[12px] text-faint">
+            {left === null
+              ? "este mes · sin tope"
+              : `de ${formatCost(guards.monthlyCap)}`}
           </span>
         </span>
         {left === null ? null : (
@@ -71,7 +73,7 @@ export default function SpendMeter({
 
       {open ? (
         <div className="mt-2 rounded-lg border border-hairline bg-panel px-3 py-2.5">
-          <label className="block text-[11px] text-faint">
+          <label className="block text-[12px] text-faint">
             Tope del mes, en dólares
           </label>
           <div className="mt-1.5 flex items-center gap-2">
@@ -90,29 +92,15 @@ export default function SpendMeter({
             <button
               type="button"
               onClick={commit}
-              className="shrink-0 text-[12px] text-ink transition-opacity hover:opacity-70"
+              className="shrink-0 text-[13px] text-ink transition-opacity hover:opacity-70"
             >
               Guardar
             </button>
           </div>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-faint">
+          <p className="mt-1.5 text-[12px] leading-relaxed text-faint">
             Llegado el tope se corta lo que esté corriendo y no arranca nada
             nuevo hasta el mes que viene. Vacío es sin tope.
           </p>
-
-          <label className="mt-3 flex cursor-pointer items-start gap-2 border-t border-hairline pt-2.5">
-            <input
-              type="checkbox"
-              checked={guards.approveWrites}
-              onChange={(e) => onSave({ approveWrites: e.target.checked })}
-              className="mt-0.5 accent-ink"
-            />
-            <span className="min-w-0 text-[11px] leading-relaxed text-faint">
-              <span className="text-dim">Pedirme permiso para escribir.</span>{" "}
-              Cualquier función de una fuente que no sea de sólo lectura frena
-              hasta que la autorices.
-            </span>
-          </label>
         </div>
       ) : null}
     </div>

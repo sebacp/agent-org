@@ -28,7 +28,7 @@ export default function EditorBar({
       <button
         type="button"
         onClick={onLibrary}
-        className="shrink-0 text-[12px] text-faint transition-colors hover:text-ink"
+        className="shrink-0 text-[13px] text-faint transition-colors hover:text-ink"
       >
         ‹ Empresas
       </button>

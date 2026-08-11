@@ -7,13 +7,14 @@ const VARIANTS: Record<Variant, string> = {
   primary: "bg-ink text-on-ink hover:opacity-90",
   secondary:
     "border border-hairline bg-panel text-ink hover:bg-raised disabled:hover:bg-panel",
-  ghost: "text-dim hover:bg-raised hover:text-ink disabled:hover:bg-transparent",
+  ghost:
+    "text-dim hover:bg-raised hover:text-ink disabled:hover:bg-transparent",
   danger: "text-danger hover:bg-danger-soft disabled:hover:bg-transparent",
 };
 
 const SIZES: Record<Size, string> = {
   /** For actions that live inside a card, where `md` crowds the text. */
-  sm: "rounded-md px-2.5 py-1 text-[12px]",
+  sm: "rounded-md px-2.5 py-1 text-[13px]",
   md: "rounded-lg px-3.5 py-2 text-[14px]",
   lg: "rounded-xl px-5 py-2.5 text-[15px] font-medium",
 };

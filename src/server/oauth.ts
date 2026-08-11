@@ -171,6 +171,7 @@ export async function authorize(
     authorizationCode: code,
   });
   if (result === "AUTHORIZED") return "";
-  if (!provider.authUrl) throw new Error("El servidor no ofreció dónde entrar.");
+  if (!provider.authUrl)
+    throw new Error("El servidor no ofreció dónde entrar.");
   return provider.authUrl;
 }

@@ -59,7 +59,9 @@ export function migrateOrgFile(file: OrgChartFile): OrgChartFile {
         ...node.data,
         model: coerceModel(node.data.model),
         sources: Array.isArray(node.data.sources) ? node.data.sources : [],
-        library: Array.isArray(node.data.library) ? node.data.library : ["write"],
+        library: Array.isArray(node.data.library)
+          ? node.data.library
+          : ["write"],
       },
     })),
   };

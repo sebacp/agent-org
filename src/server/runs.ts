@@ -28,7 +28,9 @@ interface LiveRun {
 // re-evaluates this one, and a corrida started before the edit would never be
 // cleared from the discarded map. Keyed apart from the older metadata-only map
 // so a dev reload can't read one shape as the other.
-const globals = globalThis as { orgLiveRuns?: Map<string, Map<string, LiveRun>> };
+const globals = globalThis as {
+  orgLiveRuns?: Map<string, Map<string, LiveRun>>;
+};
 const running = (globals.orgLiveRuns ??= new Map());
 
 /**

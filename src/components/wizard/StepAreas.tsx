@@ -3,11 +3,7 @@ import Button from "@/components/ui/Button";
 import { TextArea, TextInput } from "@/components/ui/Field";
 import PickCard, { Tag } from "@/components/ui/PickCard";
 import StepShell from "@/components/wizard/StepShell";
-import {
-  DEPARTMENT_CATALOG,
-  ROOT_DEPARTMENT,
-  missionBlurb,
-} from "@/lib/roles";
+import { DEPARTMENT_CATALOG, ROOT_DEPARTMENT, missionBlurb } from "@/lib/roles";
 import type { DepartmentDef } from "@/lib/types";
 
 interface StepAreasProps {

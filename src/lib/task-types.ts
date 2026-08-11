@@ -24,6 +24,13 @@ export interface PendingTask {
   attachments: TaskAttachment[];
   /** Who got stuck, so resuming goes straight back to them. */
   agentId: string;
+  /**
+   * The hilo the corrida that got stuck belonged to. Retomar continues it
+   * instead of opening another, so answering something a week later lands in
+   * the same conversation the pedido started. Absent on tasks noted before the
+   * link was recorded, which resume on their own as they used to.
+   */
+  threadId?: string;
   author: string;
   area: string;
   state: TaskState;

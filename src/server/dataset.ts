@@ -414,15 +414,7 @@ function bucket(value: unknown, how: Grouping): string {
 }
 
 export type Op =
-  | "="
-  | "!="
-  | ">"
-  | ">="
-  | "<"
-  | "<="
-  | "contiene"
-  | "existe"
-  | "vacio";
+  "=" | "!=" | ">" | ">=" | "<" | "<=" | "contiene" | "existe" | "vacio";
 
 export interface Filter {
   campo: string;
@@ -508,7 +500,10 @@ export function queryDataset(
   const metric = query.metrica ?? "contar";
   const grouping = query.agruparComo ?? "valor";
 
-  const totals = new Map<string, { sum: number; count: number; min: number; max: number }>();
+  const totals = new Map<
+    string,
+    { sum: number; count: number; min: number; max: number }
+  >();
   let matched = 0;
   let skipped = 0;
 

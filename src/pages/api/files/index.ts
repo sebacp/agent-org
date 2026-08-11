@@ -57,7 +57,8 @@ export default async function handler(
     });
   } catch (error) {
     res.status(400).json({
-      error: error instanceof Error ? error.message : "No pude leer la biblioteca.",
+      error:
+        error instanceof Error ? error.message : "No pude leer la biblioteca.",
     });
   }
 }

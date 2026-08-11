@@ -10,9 +10,12 @@ import Avatar from "@/components/ui/Avatar";
 import Icon, { type IconName } from "@/components/ui/Icon";
 import Markdown from "@/components/ui/Markdown";
 import AutomationBoard from "@/components/workspace/AutomationBoard";
+import SecurityBoard from "@/components/workspace/SecurityBoard";
 import TaskBoard from "@/components/workspace/TaskBoard";
+import { fileThumbUrl } from "@/lib/api";
 import type { Automation, AutomationDraft } from "@/lib/automation-types";
 import { isDataset, isImage, type FileMeta } from "@/lib/file-types";
+import type { GuardState, Guards } from "@/lib/guard-types";
 import type { PendingTask, TaskAttachment } from "@/lib/task-types";
 import type { AgentNode, OrgEdge } from "@/lib/types";
 import {
@@ -22,13 +25,14 @@ import {
   type RunUsage,
 } from "@/lib/usage";
 
-export type ContextTab = "org" | "tasks" | "files" | "automations";
+export type ContextTab = "org" | "tasks" | "files" | "automations" | "security";
 
 const TABS = [
   ["org", "Organigrama"],
-  ["tasks", "Pendientes"],
+  ["tasks", "Inbox"],
   ["files", "Biblioteca"],
   ["automations", "Automatizaciones"],
+  ["security", "Seguridad"],
 ] as const;
 
 const WHEN = new Intl.DateTimeFormat("es-AR", {
@@ -71,7 +75,32 @@ function fileIcon(file: FileMeta): IconName {
   return EXT[ext] ?? (file.mime ? "attachment" : "doc");
 }
 
+/**
+ * What the row leads with. An image gets shown rather than named, because a
+ * CDN calls it `e22a5d95-291b-429c.jpg` and no title tells you which one it is.
+ */
+function FileMark({ orgId, file }: { orgId: string; file: FileMeta }) {
+  // A format the thumbnailer can't read — an SVG, a truncated download — falls
+  // back to the icon the list drew before there were thumbnails.
+  const [flat, setFlat] = useState(false);
+
+  return isImage(file) && !flat ? (
+    // eslint-disable-next-line @next/next/no-img-element -- it comes off our own disk already sized
+    <img
+      src={fileThumbUrl(orgId, file.id)}
+      alt=""
+      onError={() => setFlat(true)}
+      className="size-9 shrink-0 rounded-md border border-hairline bg-raised object-cover"
+    />
+  ) : (
+    <span className="mt-0.5 text-faint">
+      <Icon name={fileIcon(file)} />
+    </span>
+  );
+}
+
 interface ContextPaneProps {
+  orgId: string;
   tab: ContextTab;
   onTab: (tab: ContextTab) => void;
   /** Only meaningful below `lg`, where the pane becomes a drawer. */
@@ -96,6 +125,8 @@ interface ContextPaneProps {
   onResumeTask: (task: PendingTask) => void;
   onRemoveTask: (id: string) => void;
   automations: Automation[];
+  /** Names of the automations with a corrida going, whoever set it off. */
+  runningAutomations: string[];
   onCreateAutomation: (draft: AutomationDraft) => Promise<void>;
   onSaveAutomation: (
     id: string,
@@ -103,11 +134,15 @@ interface ContextPaneProps {
   ) => Promise<void>;
   onRunAutomation: (id: string) => Promise<void>;
   onRemoveAutomation: (id: string) => void;
+  guards: GuardState;
+  onGuards: (patch: Partial<Guards>) => void;
+  onRevokeGrant: (sourceId: string, tool: string) => void;
   onOpenThread: (threadId: string) => void;
   onEdit: () => void;
 }
 
 export default function ContextPane({
+  orgId,
   tab,
   onTab,
   open,
@@ -130,10 +165,14 @@ export default function ContextPane({
   onResumeTask,
   onRemoveTask,
   automations,
+  runningAutomations,
   onCreateAutomation,
   onSaveAutomation,
   onRunAutomation,
   onRemoveAutomation,
+  guards,
+  onGuards,
+  onRevokeGrant,
   onOpenThread,
   onEdit,
 }: ContextPaneProps) {
@@ -207,6 +246,9 @@ export default function ContextPane({
                 {id === "automations" && automations.length
                   ? ` · ${automations.length}`
                   : ""}
+                {id === "security" && guards.grants.length
+                  ? ` · ${guards.grants.length}`
+                  : ""}
               </button>
             ))}
           </div>
@@ -216,7 +258,7 @@ export default function ContextPane({
           <button
             type="button"
             onClick={onEdit}
-            className="text-[12px] text-faint transition-colors hover:text-ink"
+            className="text-[13px] text-faint transition-colors hover:text-ink"
           >
             Editar
           </button>
@@ -256,7 +298,7 @@ export default function ContextPane({
                   </p>
                 </div>
                 {spend[selected.id] ? (
-                  <p className="mt-1 text-[11px] text-faint">
+                  <p className="mt-1 text-[12px] text-faint">
                     {formatTokens(totalTokens(spend[selected.id]))} tokens ·{" "}
                     {formatCost(spend[selected.id].cost)}
                   </p>
@@ -264,11 +306,11 @@ export default function ContextPane({
                 {/* An answer comes back in markdown; instructions are typed by
                   hand and keep the line breaks their author put there. */}
                 {results[selected.id] ? (
-                  <Markdown className="mt-1.5 text-[12px] text-dim">
+                  <Markdown className="mt-1.5 text-[13px] text-dim">
                     {results[selected.id]}
                   </Markdown>
                 ) : (
-                  <p className="mt-1.5 text-[12px] leading-relaxed whitespace-pre-line text-dim">
+                  <p className="mt-1.5 text-[13px] leading-relaxed whitespace-pre-line text-dim">
                     {selected.data.instructions || "Sin instrucciones."}
                   </p>
                 )}
@@ -288,6 +330,7 @@ export default function ContextPane({
           <div className="min-h-0 flex-1 overflow-y-auto">
             <AutomationBoard
               automations={automations}
+              runningNames={runningAutomations}
               agents={agentOptions}
               onCreate={onCreateAutomation}
               onSave={onSaveAutomation}
@@ -296,6 +339,12 @@ export default function ContextPane({
               onOpenThread={onOpenThread}
             />
           </div>
+        ) : tab === "security" ? (
+          <SecurityBoard
+            guards={guards}
+            onSave={onGuards}
+            onRevoke={onRevokeGrant}
+          />
         ) : (
           <>
             <div className="border-b border-hairline px-3 py-2.5">
@@ -315,19 +364,17 @@ export default function ContextPane({
                     onClick={() => onOpenFile(file.id)}
                     className="flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 pr-7 text-left transition-colors hover:bg-raised/60"
                   >
-                    <span className="mt-0.5 text-faint">
-                      <Icon name={fileIcon(file)} />
-                    </span>
+                    <FileMark orgId={orgId} file={file} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] text-ink">
                         {file.title}
                         {file.partial ? (
-                          <span className="ml-1.5 align-[1px] text-[10px] tracking-wide text-warn uppercase">
+                          <span className="ml-1.5 align-[1px] text-[11px] tracking-wide text-warn uppercase">
                             incompleto
                           </span>
                         ) : null}
                       </span>
-                      <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-faint">
+                      <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[12px] text-faint">
                         {/* The face of whoever wrote it. What you uploaded
                           yourself has no author on the chart, so it goes
                           without one. */}
@@ -354,7 +401,7 @@ export default function ContextPane({
               ))}
 
               {files.length === 0 ? (
-                <p className="px-3 py-8 text-[12px] leading-relaxed text-faint">
+                <p className="px-3 py-8 text-[13px] leading-relaxed text-faint">
                   {query
                     ? "Nada con esa búsqueda."
                     : "Vacía por ahora. Los agentes guardan acá lo que vale la pena conservar."}

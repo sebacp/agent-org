@@ -148,7 +148,12 @@ export async function runOrg(
     };
 
     const onUsage = (usage: TokenUsage) => {
-      emit({ type: "usage", agentId, usage, cost: modelCost(agent.model, usage) });
+      emit({
+        type: "usage",
+        agentId,
+        usage,
+        cost: modelCost(agent.model, usage),
+      });
     };
 
     // Only the root writes to the conversation, so it is the only one worth
@@ -158,10 +163,12 @@ export async function runOrg(
     // who was asked it: a delegate gets an encargo written to stand on its own.
     const history = live ? request.history : undefined;
     const onThinking = live
-      ? (text: string) => emit({ type: "stream", agentId, phase: "thinking", text })
+      ? (text: string) =>
+          emit({ type: "stream", agentId, phase: "thinking", text })
       : undefined;
     const onText = live
-      ? (text: string) => emit({ type: "stream", agentId, phase: "answer", text })
+      ? (text: string) =>
+          emit({ type: "stream", agentId, phase: "answer", text })
       : undefined;
 
     try {

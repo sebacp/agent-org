@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import Button from "@/components/ui/Button";
 import Markdown from "@/components/ui/Markdown";
 import { fetchFile, fileRawUrl } from "@/lib/api";
-import { fileSize, isDataset, isImage, type FileRecord } from "@/lib/file-types";
+import {
+  fileSize,
+  isDataset,
+  isImage,
+  type FileRecord,
+} from "@/lib/file-types";
 
 /** Data you uploaded is not prose: Markdown would swallow its line breaks. */
 const RAW = /\.(csv|tsv|json|ya?ml|log)$/i;
@@ -49,7 +54,7 @@ export default function FileViewer({
               {file?.title ?? "Archivo"}
             </h2>
             {file ? (
-              <p className="mt-1 text-[12px] text-faint">
+              <p className="mt-1 text-[13px] text-faint">
                 {[file.author, file.area, ...file.tags]
                   .filter(Boolean)
                   .join(" · ")}
@@ -68,16 +73,17 @@ export default function FileViewer({
                 a total, so whoever opens it has to be told before they read a
                 single row. */}
               {file.partial ? (
-                <p className="mb-4 rounded-lg border border-warn-line bg-warn-soft px-4 py-3 text-[12px] leading-relaxed text-warn">
-                  Este volcado quedó incompleto: faltan registros. {file.partial}
+                <p className="mb-4 rounded-lg border border-warn-line bg-warn-soft px-4 py-3 text-[13px] leading-relaxed text-warn">
+                  Este volcado quedó incompleto: faltan registros.{" "}
+                  {file.partial}
                 </p>
               ) : null}
               {/* Complete, and still not the listing. Which part of it this is
                 only shows in what was asked for. */}
               {file.asked ? (
-                <p className="mb-4 rounded-lg border border-hairline bg-panel px-4 py-3 text-[12px] leading-relaxed text-dim">
+                <p className="mb-4 rounded-lg border border-hairline bg-panel px-4 py-3 text-[13px] leading-relaxed text-dim">
                   Se pidió a la fuente con{" "}
-                  <span className="font-mono text-[11px] text-ink">
+                  <span className="font-mono text-[12px] text-ink">
                     {file.asked}
                   </span>
                   . Lo que no cumpla eso no está en este archivo.
@@ -104,7 +110,7 @@ export default function FileViewer({
                   </a>
                 </div>
               ) : isDataset(file) || RAW.test(file.title) ? (
-                <pre className="overflow-x-auto text-[12px] leading-relaxed whitespace-pre text-ink">
+                <pre className="overflow-x-auto text-[13px] leading-relaxed whitespace-pre text-ink">
                   {file.content}
                 </pre>
               ) : (
@@ -113,7 +119,7 @@ export default function FileViewer({
                 </Markdown>
               )}
               {!file.mime && file.content.length < file.chars ? (
-                <p className="mt-4 border-t border-hairline pt-3 text-[12px] text-faint">
+                <p className="mt-4 border-t border-hairline pt-3 text-[13px] text-faint">
                   {isDataset(file)
                     ? `Un volcado de ${fileSize(file)}. Esto es el principio; los agentes lo consultan entero sin abrirlo.`
                     : `Mostrando los primeros ${file.content.length.toLocaleString("es-AR")} caracteres de ${file.chars.toLocaleString("es-AR")}.`}

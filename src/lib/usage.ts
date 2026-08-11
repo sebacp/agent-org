@@ -15,8 +15,10 @@ export interface RunUsage extends TokenUsage {
 export const NO_USAGE: RunUsage = { cached: 0, input: 0, output: 0, cost: 0 };
 
 export function modelCost(id: ModelId, usage: TokenUsage): number {
-  const price = (MODELS.find((m) => m.id === id) ??
-    MODELS.find((m) => m.id === DEFAULT_MODEL)!).price;
+  const price = (
+    MODELS.find((m) => m.id === id) ??
+    MODELS.find((m) => m.id === DEFAULT_MODEL)!
+  ).price;
   return (
     (usage.cached * price.cached +
       usage.input * price.input +

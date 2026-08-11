@@ -15,11 +15,14 @@ export function useFiles(orgId: string) {
   // answer to an older query must not overwrite a newer one.
   useEffect(() => {
     let live = true;
-    const timer = window.setTimeout(() => {
-      void load().then((list) => {
-        if (live) setFiles(list);
-      });
-    }, query ? 250 : 0);
+    const timer = window.setTimeout(
+      () => {
+        void load().then((list) => {
+          if (live) setFiles(list);
+        });
+      },
+      query ? 250 : 0,
+    );
     return () => {
       live = false;
       window.clearTimeout(timer);

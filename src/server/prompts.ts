@@ -208,8 +208,10 @@ export function consolidatePrompt(
   missing: string[] = [],
 ): string {
   const body = answers
-    .map((a) => `## ${a.agent.role}${a.agent.name ? ` — ${a.agent.name}` : ""}
-${a.text}`)
+    .map(
+      (a) => `## ${a.agent.role}${a.agent.name ? ` — ${a.agent.name}` : ""}
+${a.text}`,
+    )
     .join("\n\n");
 
   return `Tu manager te encargó esto:

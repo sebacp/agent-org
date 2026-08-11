@@ -78,7 +78,8 @@ async function call(options: {
   onText?: (delta: string) => void;
   signal?: AbortSignal;
 }): Promise<{ content: string; toolCalls: ToolCall[]; usage: TokenUsage }> {
-  const { apiKey, model, messages, tools, onThinking, onText, signal } = options;
+  const { apiKey, model, messages, tools, onThinking, onText, signal } =
+    options;
 
   const response = await fetch(ENDPOINT, {
     method: "POST",
@@ -156,7 +157,8 @@ async function call(options: {
           function: {
             name: part.function?.name ?? open?.function.name ?? "",
             arguments:
-              (open?.function.arguments ?? "") + (part.function?.arguments ?? ""),
+              (open?.function.arguments ?? "") +
+              (part.function?.arguments ?? ""),
           },
         });
       }
@@ -232,7 +234,8 @@ export async function chat(options: {
     onUsage?.(usage);
 
     if (!onTool || toolCalls.length === 0) {
-      if (!content) throw new DeepSeekError("DeepSeek devolvió una respuesta vacía.");
+      if (!content)
+        throw new DeepSeekError("DeepSeek devolvió una respuesta vacía.");
       return content;
     }
 
@@ -247,5 +250,7 @@ export async function chat(options: {
     }
   }
 
-  throw new DeepSeekError("El agente se quedó dando vueltas con las herramientas.");
+  throw new DeepSeekError(
+    "El agente se quedó dando vueltas con las herramientas.",
+  );
 }

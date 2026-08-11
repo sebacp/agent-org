@@ -32,6 +32,11 @@ export function listApprovals(orgId: string): PendingWrite[] {
     .sort((a, b) => a.askedAt.localeCompare(b.askedAt));
 }
 
+/** The one being answered, so a "siempre" knows what it is granting. */
+export function findApproval(orgId: string, id: string): PendingWrite | null {
+  return waiting.get(orgId)?.get(id)?.write ?? null;
+}
+
 /**
  * Parks the call and returns once somebody answers, nobody does, or the
  * corrida is cut. The promise is the tool call itself: there is one request

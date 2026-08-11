@@ -79,8 +79,12 @@ export async function executeRun(
         // What the line summarises and where it came from outlive the corrida:
         // a thread you can only read the conclusions of is one you can only
         // believe.
-        ...(event.type === "tool" && event.detail ? { detail: event.detail } : {}),
-        ...(event.type === "tool" && event.source ? { source: event.source } : {}),
+        ...(event.type === "tool" && event.detail
+          ? { detail: event.detail }
+          : {}),
+        ...(event.type === "tool" && event.source
+          ? { source: event.source }
+          : {}),
       });
     }
     // Kept on the server too, so a tab that opens the corrida while it runs

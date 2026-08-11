@@ -130,7 +130,7 @@ export default function StepSources({
                     <span
                       key={tool.name}
                       title={tool.description}
-                      className="rounded-md border border-hairline px-2 py-1 font-mono text-[11px] text-dim"
+                      className="rounded-md border border-hairline px-2 py-1 font-mono text-[12px] text-dim"
                     >
                       {tool.name}
                       {tool.readOnly ? null : (
@@ -141,7 +141,7 @@ export default function StepSources({
                     </span>
                   ))}
                   {hidden > 0 ? (
-                    <span className="px-1 py-1 text-[11px] text-faint">
+                    <span className="px-1 py-1 text-[12px] text-faint">
                       y {hidden} más
                     </span>
                   ) : null}

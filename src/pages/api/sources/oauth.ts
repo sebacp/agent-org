@@ -66,7 +66,9 @@ export default async function handler(
   const parsed = parseState(state);
 
   if (!parsed) {
-    res.status(400).send(page("No pude volver", "El permiso vino sin remitente."));
+    res
+      .status(400)
+      .send(page("No pude volver", "El permiso vino sin remitente."));
     return;
   }
 
@@ -89,15 +91,24 @@ export default async function handler(
   try {
     await authorize(orgId, source, code);
     // Both were only good for this one exchange, and it just happened.
-    await patchOAuth(orgId, sourceId, { state: undefined, codeVerifier: undefined });
+    await patchOAuth(orgId, sourceId, {
+      state: undefined,
+      codeVerifier: undefined,
+    });
     closeSource(orgId, sourceId);
 
     // Now that it answers, the tool list can finally be filled in.
     const fresh = await readSource(orgId, sourceId);
     if (fresh) {
-      await setSourceTools(orgId, sourceId, await listSourceTools(orgId, fresh));
+      await setSourceTools(
+        orgId,
+        sourceId,
+        await listSourceTools(orgId, fresh),
+      );
     }
-    res.status(200).send(page("Listo", "Ya podés cerrar esta ventana.", sourceId));
+    res
+      .status(200)
+      .send(page("Listo", "Ya podés cerrar esta ventana.", sourceId));
   } catch (error) {
     res
       .status(400)

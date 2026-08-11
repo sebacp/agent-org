@@ -136,10 +136,7 @@ export function parseToolName(
 }
 
 /** Throws whatever the transport threw, so the caller can show a real reason. */
-async function discover(
-  orgId: string,
-  source: SourceDef,
-): Promise<McpTool[]> {
+async function discover(orgId: string, source: SourceDef): Promise<McpTool[]> {
   const entry = acquire(orgId, source);
   if (entry.tools && Date.now() - entry.tools.at < TOOLS_TTL_MS) {
     return entry.tools.value;
@@ -208,7 +205,9 @@ function syncCatalog(
   if (!syncing.has(key)) {
     syncing.set(
       key,
-      setSourceTools(orgId, source.id, live.map(toSourceTool)).catch(() => null),
+      setSourceTools(orgId, source.id, live.map(toSourceTool)).catch(
+        () => null,
+      ),
     );
   }
 }
@@ -238,8 +237,7 @@ export async function sourceToolArgs(
 ): Promise<ToolArgs> {
   const found = (await discover(orgId, source)).find((t) => t.name === tool);
   const schema = found?.inputSchema as
-    | { properties?: Record<string, unknown> }
-    | undefined;
+    { properties?: Record<string, unknown> } | undefined;
   const properties = schema?.properties ?? {};
   return {
     names: Object.keys(properties),
@@ -289,16 +287,25 @@ export async function callSourceTool(
   args: Record<string, unknown>,
 ): Promise<string> {
   const client = await acquire(orgId, source).client;
-  const result = (await client.callTool({ name: tool, arguments: args }, undefined, {
-    timeout: CALL_TIMEOUT_MS,
-  })) as unknown as { content?: McpContent[]; isError?: boolean };
+  const result = (await client.callTool(
+    { name: tool, arguments: args },
+    undefined,
+    {
+      timeout: CALL_TIMEOUT_MS,
+    },
+  )) as unknown as { content?: McpContent[]; isError?: boolean };
 
   const text = (result.content ?? [])
-    .map((part) => (part.type === "text" ? (part.text ?? "") : `[${part.type}]`))
+    .map((part) =>
+      part.type === "text" ? (part.text ?? "") : `[${part.type}]`,
+    )
     .join("\n")
     .trim();
 
-  if (!text) return result.isError ? "La fuente devolvió un error vacío." : "Sin resultados.";
+  if (!text)
+    return result.isError
+      ? "La fuente devolvió un error vacío."
+      : "Sin resultados.";
   // Whole, however big. Whether a model ever sees all of it is decided where
   // the answer is handed over, not here: a dump has to arrive complete.
   return text;

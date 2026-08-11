@@ -6,7 +6,11 @@ interface AvatarProps {
   className?: string;
 }
 
-export default function Avatar({ seed, size = 36, className = "" }: AvatarProps) {
+export default function Avatar({
+  seed,
+  size = 36,
+  className = "",
+}: AvatarProps) {
   return (
     // eslint-disable-next-line @next/next/no-img-element -- a remote SVG has nothing for the optimizer to do
     <img

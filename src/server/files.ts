@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import type { FileFilter, FileMeta, FileRecord } from "@/lib/file-types";
 import { isSafeId } from "@/lib/id";
@@ -42,6 +49,52 @@ function bodyPath(orgId: string, fileId: string, binary = false): string {
   );
 }
 
+function thumbPath(orgId: string, fileId: string): string {
+  return path.join(
+    orgDir(orgId),
+    "archivos",
+    `${assertSafe(fileId, "Id de archivo")}.thumb.webp`,
+  );
+}
+
+/** Big enough to still be sharp on a retina screen at the size it is shown. */
+const THUMB_PX = 128;
+
+/**
+ * A square crop of an image, made the first time somebody asks for it and kept
+ * from then on. Filing doesn't make it: an image already in the library from
+ * before would never get one, and a company that never opens the biblioteca
+ * would pay for every one it never looks at.
+ */
+export async function readThumb(
+  orgId: string,
+  fileId: string,
+): Promise<Buffer | null> {
+  const target = thumbPath(orgId, fileId);
+  try {
+    return await readFile(target);
+  } catch {
+    // Not made yet.
+  }
+
+  const bytes = await readFileBytes(orgId, fileId);
+  if (!bytes) return null;
+
+  try {
+    const { default: sharp } = await import("sharp");
+    const thumb = await sharp(bytes)
+      .resize(THUMB_PX, THUMB_PX, { fit: "cover", position: "attention" })
+      .webp({ quality: 72 })
+      .toBuffer();
+    await writeFile(target, thumb);
+    return thumb;
+  } catch {
+    // An SVG, something truncated, a format this build wasn't compiled with:
+    // the list falls back to the icon it drew before there were thumbnails.
+    return null;
+  }
+}
+
 async function readIndex(orgId: string): Promise<FileMeta[]> {
   try {
     const raw = await readFile(indexPath(orgId), "utf8");
@@ -70,10 +123,7 @@ function onShelf(meta: FileMeta, filter: FileFilter): boolean {
 
 /** Accents are half the words here and nobody types them the same way twice. */
 function fold(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
+  return text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
 function terms(query: string): string[] {
@@ -178,7 +228,11 @@ async function passages(orgId: string, meta: FileMeta): Promise<string[]> {
 
   const body = await loadBody(orgId, meta.id);
   const chunks: string[] = [];
-  for (let at = 0; at < body.length && chunks.length < MAX_CHUNKS; at += CHUNK_CHARS) {
+  for (
+    let at = 0;
+    at < body.length && chunks.length < MAX_CHUNKS;
+    at += CHUNK_CHARS
+  ) {
     chunks.push(`${head}\n\n${body.slice(at, at + CHUNK_CHARS)}`);
   }
   return chunks.length > 0 ? chunks : [head];
@@ -265,7 +319,10 @@ async function rankByMeaning(
     }
     return scores;
   } catch (error) {
-    console.error("Embeddings:", error instanceof Error ? error.message : error);
+    console.error(
+      "Embeddings:",
+      error instanceof Error ? error.message : error,
+    );
     return null;
   }
 }
@@ -291,7 +348,8 @@ export async function listFiles(
   }
 
   const meaning = await rankByMeaning(orgId, shelf, filter.query);
-  if (!meaning) return shelf.filter((meta) => literal.has(meta.id)).slice(0, limit);
+  if (!meaning)
+    return shelf.filter((meta) => literal.has(meta.id)).slice(0, limit);
 
   const best = Math.max(...meaning.values(), 0);
   const near = Math.max(best * MEANING_RATIO, MEANING_FLOOR);
@@ -300,7 +358,8 @@ export async function listFiles(
     .map((meta) => ({
       meta,
       score:
-        (meaning.get(meta.id) ?? 0) + (literal.has(meta.id) ? LITERAL_BONUS : 0),
+        (meaning.get(meta.id) ?? 0) +
+        (literal.has(meta.id) ? LITERAL_BONUS : 0),
       kept: literal.has(meta.id) || (meaning.get(meta.id) ?? 0) >= near,
     }))
     .filter((row) => row.kept)
@@ -503,6 +562,7 @@ export async function closeDataset(
 export async function deleteFile(orgId: string, fileId: string): Promise<void> {
   await rm(bodyPath(orgId, fileId), { force: true });
   await rm(bodyPath(orgId, fileId, true), { force: true });
+  await rm(thumbPath(orgId, fileId), { force: true });
   await dropVector(orgId, fileId);
   await writeIndex(
     orgId,

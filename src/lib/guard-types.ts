@@ -18,6 +18,29 @@ export interface Guards {
    * what the permissions screen labels "escribe".
    */
   approveWrites: boolean;
+  /** The ones already let through for good, which stop being asked about. */
+  grants: WriteGrant[];
+}
+
+/**
+ * A function somebody stopped being asked about. Granted per source and per
+ * function rather than per agent: the same tool called by somebody else writes
+ * to the same place, and it was the writing that was being allowed.
+ */
+export interface WriteGrant {
+  sourceId: string;
+  /** What the source was called when it was granted, for a list that reads. */
+  sourceLabel: string;
+  tool: string;
+  grantedAt: string;
+}
+
+export function isGranted(
+  grants: WriteGrant[],
+  sourceId: string,
+  tool: string,
+): boolean {
+  return grants.some((g) => g.sourceId === sourceId && g.tool === tool);
 }
 
 /** The guards plus what has been spent against them. */
@@ -30,6 +53,7 @@ export interface GuardState extends Guards {
 export const DEFAULT_GUARDS: Guards = {
   monthlyCap: 20,
   approveWrites: true,
+  grants: [],
 };
 
 /** A function that writes, stopped on its way out until somebody answers. */
@@ -39,6 +63,8 @@ export interface PendingWrite {
   agentId: string;
   role: string;
   source: SourceRef;
+  /** Which source, for the grant that answering "siempre" leaves behind. */
+  sourceId: string;
   tool: string;
   /** The arguments as they would go out, pretty-printed. */
   args: string;

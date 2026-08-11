@@ -13,7 +13,10 @@ import type {
 } from "@/lib/types";
 
 /** The CEO, or whoever ended up with nobody above them. */
-export function findRootId(nodes: AgentNode[], edges: OrgEdge[]): string | null {
+export function findRootId(
+  nodes: AgentNode[],
+  edges: OrgEdge[],
+): string | null {
   const ceo = nodes.find((n) => n.data.department === ROOT_DEPARTMENT);
   if (ceo) return ceo.id;
 

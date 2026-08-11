@@ -81,7 +81,9 @@ export function useOrgGraph(orgId: string) {
   const [nodes, setNodes, onNodesChange] = useNodesState<AgentNode>(
     initial.nodes,
   );
-  const [edges, setEdges, onEdgesChange] = useEdgesState<OrgEdge>(initial.edges);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<OrgEdge>(
+    initial.edges,
+  );
   const [step, setStep] = useState<Step>(
     () => readStep(orgId, initial.company.name ? 5 : 1) as Step,
   );
@@ -124,7 +126,12 @@ export function useOrgGraph(orgId: string) {
           (e) => !dropped.has(e.source) && !dropped.has(e.target),
         );
         setDepartments(departments.filter((d) => d.id !== id));
-        setNodes(autoLayout(nodes.filter((n) => !dropped.has(n.id)), nextEdges));
+        setNodes(
+          autoLayout(
+            nodes.filter((n) => !dropped.has(n.id)),
+            nextEdges,
+          ),
+        );
         setEdges(nextEdges);
         return;
       }
@@ -196,8 +203,9 @@ export function useOrgGraph(orgId: string) {
   const removeAgent = useCallback(
     (id: string) => {
       const isDelegation = (e: OrgEdge) => e.data?.kind !== "link";
-      const parent = edges.find((e) => e.target === id && isDelegation(e))
-        ?.source;
+      const parent = edges.find(
+        (e) => e.target === id && isDelegation(e),
+      )?.source;
       const orphans = edges
         .filter((e) => e.source === id && isDelegation(e))
         .map((e) => e.target);
@@ -215,7 +223,12 @@ export function useOrgGraph(orgId: string) {
           })),
         ];
       }
-      setNodes(autoLayout(nodes.filter((n) => n.id !== id), nextEdges));
+      setNodes(
+        autoLayout(
+          nodes.filter((n) => n.id !== id),
+          nextEdges,
+        ),
+      );
       setEdges(nextEdges);
       setOpenAgentId((current) => (current === id ? null : current));
     },
@@ -341,8 +354,7 @@ export function useOrgGraph(orgId: string) {
     refit();
   }, [load, refit]);
 
-  const openAgent =
-    nodes.find((n) => n.id === openAgentId) ?? null;
+  const openAgent = nodes.find((n) => n.id === openAgentId) ?? null;
 
   return {
     company,

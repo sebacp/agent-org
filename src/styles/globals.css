@@ -15,8 +15,8 @@
   --color-raised: #33322c;
   --color-hairline: #45443c;
   --color-ink: #fbfaf6;
-  --color-dim: #bcb9ae;
-  --color-faint: #8d8a7f;
+  --color-dim: #d2cfc4;
+  --color-faint: #a7a498;
   /** What goes on top of `bg-ink`, which is the light surface down here. */
   --color-on-ink: #121210;
   /** Strokes drawn by hand on the chart, where a border token can't reach. */
@@ -31,9 +31,10 @@
   --color-warn: #f0b442;
   --color-warn-soft: #33270f;
   --color-warn-line: #5f4a1c;
+  --color-ok: #7fbf6a;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    sans-serif;
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
 }
 

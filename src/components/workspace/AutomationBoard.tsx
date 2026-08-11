@@ -86,10 +86,25 @@ function draftFrom(form: Form, enabled: boolean): AutomationDraft {
 // No width of its own: stacked, the column stretches these, and in a row the
 // two fields say what they take. `w-full` here would win over both.
 const FIELD =
-  "rounded-lg border border-hairline bg-panel px-2.5 py-1.5 text-[12px] text-ink outline-none focus:border-faint";
+  "rounded-lg border border-hairline bg-panel px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-faint";
+
+/**
+ * How the last corrida went, or that there is one going. A corrida fired by the
+ * cron leaves nothing on screen while it runs, so without this the row looks
+ * the same whether the automation is working or has been idle for a week.
+ */
+function mark(automation: Automation, live: boolean): string {
+  if (live) return "animate-pulse bg-warn";
+  if (!automation.enabled) return "border border-hairline";
+  if (automation.lastError) return "bg-danger";
+  if (automation.runs > 0) return "bg-ok";
+  return "border border-faint";
+}
 
 interface AutomationBoardProps {
   automations: Automation[];
+  /** Names of the ones with a corrida going, whoever set it off. */
+  runningNames: string[];
   agents: { id: string; label: string }[];
   onCreate: (draft: AutomationDraft) => Promise<void>;
   onSave: (id: string, patch: Partial<AutomationDraft>) => Promise<void>;
@@ -100,6 +115,7 @@ interface AutomationBoardProps {
 
 export default function AutomationBoard({
   automations,
+  runningNames,
   agents,
   onCreate,
   onSave,
@@ -136,7 +152,9 @@ export default function AutomationBoard({
       else if (editing) await onSave(editing, draft);
       setEditing(null);
     } catch (caught) {
-      setFailure(caught instanceof Error ? caught.message : "No pude guardarla.");
+      setFailure(
+        caught instanceof Error ? caught.message : "No pude guardarla.",
+      );
     }
   };
 
@@ -146,7 +164,9 @@ export default function AutomationBoard({
     try {
       await onRun(automation.id);
     } catch (caught) {
-      setFailure(caught instanceof Error ? caught.message : "Falló la corrida.");
+      setFailure(
+        caught instanceof Error ? caught.message : "Falló la corrida.",
+      );
     } finally {
       setRunning(null);
     }
@@ -231,11 +251,9 @@ export default function AutomationBoard({
         ))}
       </select>
 
-      {failure ? (
-        <p className="text-[11px] text-danger">{failure}</p>
-      ) : null}
+      {failure ? <p className="text-[12px] text-danger">{failure}</p> : null}
 
-      <div className="flex gap-3 text-[12px]">
+      <div className="flex gap-3 text-[13px]">
         <button
           type="button"
           disabled={!form.task.trim()}
@@ -271,99 +289,113 @@ export default function AutomationBoard({
         </div>
       )}
 
-      {automations.map((automation) => (
-        <div key={automation.id} className="group relative px-3 py-3">
-          <p
-            className={`pr-5 text-[13px] leading-snug ${
-              automation.enabled ? "text-ink" : "text-faint"
-            }`}
-          >
-            {automation.name}
-          </p>
-          <p className="mt-0.5 text-[11px] text-faint">
-            {describeCron(automation.cron)}
-            {automation.enabled
-              ? automation.nextRunAt
-                ? ` · próxima ${whenLabel(automation.nextRunAt)}`
-                : ""
-              : " · en pausa"}
-          </p>
+      {automations.map((automation) => {
+        const live =
+          running === automation.id || runningNames.includes(automation.name);
 
-          <button
-            type="button"
-            aria-label="Borrar automatización"
-            onClick={() => onRemove(automation.id)}
-            className="absolute top-2.5 right-0 text-[13px] text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-danger focus:opacity-100"
-          >
-            ×
-          </button>
+        return (
+          <div key={automation.id} className="group relative px-3 py-3">
+            <span
+              className={`absolute top-4 left-0 size-1.5 rounded-full ${mark(automation, live)}`}
+            />
+            <p
+              className={`pr-5 text-[13px] leading-snug ${
+                automation.enabled ? "text-ink" : "text-faint"
+              }`}
+            >
+              {automation.name}
+            </p>
+            <p className="mt-0.5 text-[12px] text-faint">
+              {describeCron(automation.cron)}
+              {automation.enabled
+                ? automation.nextRunAt
+                  ? ` · próxima ${whenLabel(automation.nextRunAt)}`
+                  : ""
+                : " · en pausa"}
+            </p>
 
-          {editing === automation.id ? (
-            fields
-          ) : (
-            <>
-              <p className="mt-2 text-[12px] leading-relaxed whitespace-pre-line text-dim">
-                {automation.task}
-              </p>
+            <button
+              type="button"
+              aria-label="Borrar automatización"
+              onClick={() => onRemove(automation.id)}
+              className="absolute top-2.5 right-0 text-[13px] text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-danger focus:opacity-100"
+            >
+              ×
+            </button>
 
-              {automation.lastError ? (
-                <p className="mt-1.5 text-[11px] leading-relaxed text-danger">
-                  {automation.lastError}
+            {editing === automation.id ? (
+              fields
+            ) : (
+              <>
+                <p className="mt-2 text-[13px] leading-relaxed whitespace-pre-line text-dim">
+                  {automation.task}
                 </p>
-              ) : null}
 
-              {automation.runs > 0 ? (
-                <p className="mt-1.5 text-[11px] text-faint">
-                  {automation.runs} corrida{automation.runs === 1 ? "" : "s"}
-                  {automation.lastRunAt
-                    ? ` · última ${whenLabel(automation.lastRunAt)}`
-                    : ""}
-                  {automation.cost > 0 ? ` · ${formatCost(automation.cost)}` : ""}
-                </p>
-              ) : null}
+                {automation.lastError ? (
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-danger">
+                    {automation.lastError}
+                  </p>
+                ) : null}
 
-              <div className="mt-2 flex flex-wrap gap-3 text-[12px]">
-                <button
-                  type="button"
-                  disabled={running !== null}
-                  onClick={() => void run(automation)}
-                  className="text-faint transition-colors hover:text-ink disabled:text-faint"
-                >
-                  {running === automation.id ? "Corriendo…" : "Correr ahora"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openEdit(automation)}
-                  className="text-faint transition-colors hover:text-ink"
-                >
-                  Editar
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    void onSave(automation.id, { enabled: !automation.enabled })
-                  }
-                  className="text-faint transition-colors hover:text-ink"
-                >
-                  {automation.enabled ? "Pausar" : "Reanudar"}
-                </button>
-                {automation.lastThreadId ? (
+                {automation.runs > 0 ? (
+                  <p className="mt-1.5 text-[12px] text-faint">
+                    {automation.runs} corrida{automation.runs === 1 ? "" : "s"}
+                    {automation.lastRunAt
+                      ? ` · última ${whenLabel(automation.lastRunAt)}`
+                      : ""}
+                    {automation.cost > 0
+                      ? ` · ${formatCost(automation.cost)}`
+                      : ""}
+                  </p>
+                ) : null}
+
+                <div className="mt-2 flex flex-wrap gap-3 text-[13px]">
                   <button
                     type="button"
-                    onClick={() => onOpenThread(automation.lastThreadId ?? "")}
+                    disabled={running !== null || live}
+                    onClick={() => void run(automation)}
+                    className="text-faint transition-colors hover:text-ink disabled:text-faint"
+                  >
+                    {live ? "Corriendo…" : "Correr ahora"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openEdit(automation)}
                     className="text-faint transition-colors hover:text-ink"
                   >
-                    Ver lo último
+                    Editar
                   </button>
-                ) : null}
-              </div>
-            </>
-          )}
-        </div>
-      ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void onSave(automation.id, {
+                        enabled: !automation.enabled,
+                      })
+                    }
+                    className="text-faint transition-colors hover:text-ink"
+                  >
+                    {automation.enabled ? "Pausar" : "Reanudar"}
+                  </button>
+                  {automation.lastThreadId ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onOpenThread(automation.lastThreadId ?? "")
+                      }
+                      className="text-faint transition-colors hover:text-ink"
+                    >
+                      Ver lo último
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })}
 
       {automations.length === 0 && editing !== "new" ? (
-        <p className="px-3 py-8 text-[12px] leading-relaxed text-faint">
+        <p className="px-3 py-8 text-[13px] leading-relaxed text-faint">
           Nada programado. Una automatización le hace el mismo pedido a la
           empresa cada tanto, sin que tengas que estar acá.
         </p>

@@ -30,9 +30,7 @@ export function useTasks(orgId: string) {
   const answer = useCallback(
     async (id: string, text: string, attachments: TaskAttachment[]) => {
       const updated = await answerTask(orgId, id, text, attachments);
-      setTasks((current) =>
-        current.map((t) => (t.id === id ? updated : t)),
-      );
+      setTasks((current) => current.map((t) => (t.id === id ? updated : t)));
     },
     [orgId],
   );
@@ -44,7 +42,9 @@ export function useTasks(orgId: string) {
       }
       const content = await file.text();
       if (content.length > MAX_UPLOAD_CHARS) {
-        throw new Error("El archivo pasa los 10 MB. Recortalo o subí un resumen.");
+        throw new Error(
+          "El archivo pasa los 10 MB. Recortalo o subí un resumen.",
+        );
       }
       const meta = await uploadFile(orgId, {
         title: file.name,

@@ -2,8 +2,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   DEFAULT_GUARDS,
+  isGranted,
   type GuardState,
   type Guards,
+  type WriteGrant,
 } from "@/lib/guard-types";
 import { isSafeId } from "@/lib/id";
 import { publish } from "@/server/bus";
@@ -27,6 +29,24 @@ function thisMonth(): string {
  * says last month gets a counter at zero: the total belongs to a month, so
  * August's spend is not a smaller number than July's, it is another question.
  */
+/** Anything half-written into the file is a permission nobody can read. */
+function cleanGrants(raw: unknown): WriteGrant[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    const g = (entry ?? {}) as Partial<WriteGrant>;
+    return typeof g.sourceId === "string" && typeof g.tool === "string"
+      ? [
+          {
+            sourceId: g.sourceId,
+            sourceLabel: g.sourceLabel ?? g.sourceId,
+            tool: g.tool,
+            grantedAt: g.grantedAt ?? "",
+          },
+        ]
+      : [];
+  });
+}
+
 function normalize(raw: unknown): GuardState {
   const saved = (raw ?? {}) as Partial<GuardState>;
   const month = thisMonth();
@@ -36,6 +56,7 @@ function normalize(raw: unknown): GuardState {
         ? saved.monthlyCap
         : DEFAULT_GUARDS.monthlyCap,
     approveWrites: saved.approveWrites !== false,
+    grants: cleanGrants(saved.grants),
     month,
     spent:
       saved.month === month && typeof saved.spent === "number"
@@ -90,6 +111,49 @@ export function saveGuards(
       ...(typeof patch.approveWrites === "boolean"
         ? { approveWrites: patch.approveWrites }
         : {}),
+    };
+    await write(orgId, next);
+    return next;
+  });
+}
+
+/**
+ * Stops asking about one function of one source. Granted from the card that
+ * asked, so what lands here is the answer to a question that was on screen —
+ * never something that had to be typed out and could name the wrong tool.
+ */
+export function grantWrite(
+  orgId: string,
+  grant: Omit<WriteGrant, "grantedAt">,
+): Promise<GuardState> {
+  return serially(orgId, async () => {
+    const current = await readGuards(orgId);
+    if (isGranted(current.grants, grant.sourceId, grant.tool)) return current;
+    const next: GuardState = {
+      ...current,
+      grants: [
+        ...current.grants,
+        { ...grant, grantedAt: new Date().toISOString() },
+      ],
+    };
+    await write(orgId, next);
+    return next;
+  });
+}
+
+/** Back to being asked about. The next call is the one that stops. */
+export function revokeWrite(
+  orgId: string,
+  sourceId: string,
+  tool: string,
+): Promise<GuardState> {
+  return serially(orgId, async () => {
+    const current = await readGuards(orgId);
+    const next: GuardState = {
+      ...current,
+      grants: current.grants.filter(
+        (g) => !(g.sourceId === sourceId && g.tool === tool),
+      ),
     };
     await write(orgId, next);
     return next;

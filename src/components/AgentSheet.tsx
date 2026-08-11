@@ -224,7 +224,7 @@ export default function AgentSheet({
                         {source.label || "Sin nombre"}
                       </span>
                     </label>
-                    <span className="shrink-0 text-[12px] text-faint">
+                    <span className="shrink-0 text-[13px] text-faint">
                       {source.enabled
                         ? `${picked.length} de ${source.tools.length}`
                         : "apagada"}
@@ -232,12 +232,12 @@ export default function AgentSheet({
                   </div>
 
                   {source.tools.length === 0 ? (
-                    <p className="mt-1.5 text-[12px] leading-relaxed text-faint">
+                    <p className="mt-1.5 text-[13px] leading-relaxed text-faint">
                       No sé qué funciones tiene. Probá la conexión en Fuentes.
                     </p>
                   ) : picked.length > 0 ? (
                     <>
-                      <div className="mt-2 flex gap-4 text-[12px]">
+                      <div className="mt-2 flex gap-4 text-[13px]">
                         <button
                           type="button"
                           onClick={() =>
@@ -295,7 +295,7 @@ export default function AgentSheet({
                         (name) =>
                           !source.tools.find((t) => t.name === name)?.readOnly,
                       ) ? (
-                        <p className="mt-2 text-[11px] leading-relaxed text-faint">
+                        <p className="mt-2 text-[12px] leading-relaxed text-faint">
                           Las que escriben frenan y te piden permiso antes de
                           correr, salvo que apagues el resguardo desde el gasto
                           del mes.
@@ -381,7 +381,7 @@ function Permission({
         onChange={() => onToggle?.()}
       />
       {label}
-      {note ? <span className="text-[12px] text-faint">{note}</span> : null}
+      {note ? <span className="text-[13px] text-faint">{note}</span> : null}
     </label>
   );
 }
@@ -397,7 +397,7 @@ function Inherited({
 }) {
   return (
     <div className="mt-2.5 rounded-xl border border-hairline bg-raised px-3.5 py-3">
-      <p className="text-[11px] tracking-[0.1em] text-faint uppercase">
+      <p className="text-[12px] tracking-[0.1em] text-faint uppercase">
         {label}
       </p>
       <p className="mt-1.5 text-[13px] leading-relaxed whitespace-pre-line text-dim">

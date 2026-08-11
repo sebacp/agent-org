@@ -94,7 +94,9 @@ export async function saveSource(
   input: SourceInput,
 ): Promise<SourceDef> {
   const sources = await listSources(orgId);
-  const previous = input.id ? sources.find((s) => s.id === input.id) : undefined;
+  const previous = input.id
+    ? sources.find((s) => s.id === input.id)
+    : undefined;
 
   // Sources saved before there was anything to choose only ever used a token.
   const auth: SourceAuth =
@@ -142,7 +144,10 @@ export async function setSourceTools(
   const previous = sources.find((s) => s.id === id);
   if (!previous) return null;
   const saved: SourceDef = { ...previous, tools };
-  await write(orgId, sources.map((s) => (s.id === id ? saved : s)));
+  await write(
+    orgId,
+    sources.map((s) => (s.id === id ? saved : s)),
+  );
   return saved;
 }
 
