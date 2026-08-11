@@ -103,6 +103,7 @@ export type RunEvent =
       type: "tool";
       agentId: string;
       summary: string;
+      detail?: string;
       fileId?: string;
       source?: SourceRef;
     }
@@ -125,6 +126,12 @@ export interface ThreadStep {
   role: string;
   kind: "delegate" | "tool" | "result" | "failed";
   text: string;
+  /**
+   * The work behind the line, when the line is a summary of something written:
+   * the script a cuenta was done with. A number nobody can trace is a number
+   * nobody can contradict, which is how two agents agree on a wrong one.
+   */
+  detail?: string;
   /** Only on a step that went out to a connected server. */
   source?: SourceRef;
 }

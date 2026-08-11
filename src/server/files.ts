@@ -4,6 +4,14 @@ import path from "node:path";
 import type { FileFilter, FileMeta, FileRecord } from "@/lib/file-types";
 import { isSafeId } from "@/lib/id";
 import { publish } from "@/server/bus";
+import {
+  DIMENSIONS,
+  embed,
+  embeddingsReady,
+  packVector,
+  similarity,
+  unpackVector,
+} from "@/server/embeddings";
 
 const ROOT = path.join(process.cwd(), ".data");
 
@@ -52,19 +60,220 @@ async function writeIndex(orgId: string, entries: FileMeta[]): Promise<void> {
   publish(orgId, "files");
 }
 
-function matches(meta: FileMeta, filter: FileFilter, haystack: string): boolean {
+/** The exact ones. They narrow the shelf; the query then ranks what is on it. */
+function onShelf(meta: FileMeta, filter: FileFilter): boolean {
   if (filter.area && meta.area !== filter.area) return false;
   if (filter.author && meta.author !== filter.author) return false;
   if (filter.tag && !meta.tags.includes(filter.tag)) return false;
-  if (filter.query && !haystack.includes(filter.query.toLowerCase())) {
-    return false;
-  }
   return true;
 }
 
+/** Accents are half the words here and nobody types them the same way twice. */
+function fold(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
+function terms(query: string): string[] {
+  return fold(query)
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 2);
+}
+
 /**
- * Search reads bodies only when there is a text query, so plain listing and
- * filtering stay a single index read.
+ * Every word somewhere in the file, rather than the phrase verbatim. An agent
+ * asks in the language it thinks in — "listado de keywords" — and no document
+ * has ever contained that as a run of characters.
+ */
+async function hasEveryWord(
+  orgId: string,
+  meta: FileMeta,
+  words: string[],
+): Promise<boolean> {
+  if (words.length === 0) return false;
+  const head = fold(`${meta.title} ${meta.tags.join(" ")}`);
+  if (words.every((word) => head.includes(word))) return true;
+  // A dump is megabytes of ids and amounts: reading it to grep for a word
+  // costs a great deal and matches by accident. Its title is what it is.
+  if (meta.records !== undefined || meta.mime) return false;
+  const body = fold(await loadBody(orgId, meta.id));
+  return words.every((word) => head.includes(word) || body.includes(word));
+}
+
+/**
+ * How close a file has to be to the closest one to come back at all. This model
+ * answers in a narrow band — measured against a real library, the least related
+ * file it holds still scores .31 against a question it has nothing to do with —
+ * so how near a file is to the best match says something, and the bare number
+ * says almost nothing. Everything about as good as the best answer, and then it
+ * stops: five documents about the question beat twelve about the subject.
+ */
+const MEANING_RATIO = 0.82;
+
+/**
+ * And a floor under that, because the ratio alone would always find something:
+ * ask a library about a word it has never heard and the best match is still the
+ * best of what is there.
+ */
+const MEANING_FLOOR = 0.3;
+
+/**
+ * What matching the words outright is worth against merely being about the
+ * same thing. Enough to settle it when both are in the running, not enough to
+ * put a passing mention above the document that answers the question.
+ */
+const LITERAL_BONUS = 0.2;
+
+function vectorsPath(orgId: string): string {
+  return path.join(orgDir(orgId), "vectores.json");
+}
+
+interface VectorEntry {
+  /** What the file looked like when it was read, so a changed one is re-read. */
+  hash: string;
+  chunks: string[];
+}
+
+interface VectorStore {
+  /** Vectors of one length can't be compared with vectors of another. */
+  dims: number;
+  entries: Record<string, VectorEntry>;
+}
+
+async function readVectors(orgId: string): Promise<VectorStore> {
+  try {
+    const raw = await readFile(vectorsPath(orgId), "utf8");
+    const parsed = JSON.parse(raw) as VectorStore;
+    if (parsed.dims !== DIMENSIONS) return { dims: DIMENSIONS, entries: {} };
+    return { dims: DIMENSIONS, entries: parsed.entries ?? {} };
+  } catch {
+    return { dims: DIMENSIONS, entries: {} };
+  }
+}
+
+/**
+ * A document is written once and a dump only ever grows, so how long it is says
+ * as much about whether it changed as reading it would.
+ */
+function fingerprint(meta: FileMeta): string {
+  return `${meta.title}|${meta.tags.join(",")}|${meta.chars}|${meta.records ?? ""}`;
+}
+
+/** Long enough to hold an argument, short enough that one is all it holds. */
+const CHUNK_CHARS = 1400;
+/** Past this a document is being summarised by its opening, which is enough. */
+const MAX_CHUNKS = 6;
+
+/**
+ * What gets read for meaning. The title and tags lead every piece, because a
+ * page in the middle of a document rarely says again what the document is.
+ */
+async function passages(orgId: string, meta: FileMeta): Promise<string[]> {
+  const head = `${meta.title}. ${meta.tags.join(", ")}`.trim();
+  // A dump is ids and amounts, and a picture is not text at all: what either
+  // one is about is what somebody named it.
+  if (meta.records !== undefined || meta.mime) return [head];
+
+  const body = await loadBody(orgId, meta.id);
+  const chunks: string[] = [];
+  for (let at = 0; at < body.length && chunks.length < MAX_CHUNKS; at += CHUNK_CHARS) {
+    chunks.push(`${head}\n\n${body.slice(at, at + CHUNK_CHARS)}`);
+  }
+  return chunks.length > 0 ? chunks : [head];
+}
+
+/** One catch-up at a time per company, however many searches ask for it. */
+const indexing: Map<string, Promise<VectorStore>> = ((
+  globalThis as { __fileVectors?: Map<string, Promise<VectorStore>> }
+).__fileVectors ??= new Map());
+
+/**
+ * Brings the vectors level with the library and hands them back. Only what is
+ * new or changed is sent, so the first search after a company has been running
+ * a while pays for everything on the shelf and every one after it pays for
+ * nothing.
+ */
+async function catchUp(orgId: string, shelf: FileMeta[]): Promise<VectorStore> {
+  const store = await readVectors(orgId);
+  const stale = shelf.filter(
+    (meta) => store.entries[meta.id]?.hash !== fingerprint(meta),
+  );
+  if (stale.length === 0) return store;
+
+  const texts: string[] = [];
+  const spans: { id: string; hash: string; count: number }[] = [];
+  for (const meta of stale) {
+    const chunks = await passages(orgId, meta);
+    texts.push(...chunks);
+    spans.push({ id: meta.id, hash: fingerprint(meta), count: chunks.length });
+  }
+
+  const vectors = await embed(texts);
+  let at = 0;
+  for (const span of spans) {
+    store.entries[span.id] = {
+      hash: span.hash,
+      chunks: vectors.slice(at, at + span.count).map(packVector),
+    };
+    at += span.count;
+  }
+
+  await mkdir(orgDir(orgId), { recursive: true });
+  await writeFile(vectorsPath(orgId), JSON.stringify(store), "utf8");
+  return store;
+}
+
+/**
+ * How each file on the shelf compares to the question, or nothing at all when
+ * there is no key to embed with or the API refused — in which case the search
+ * falls back to reading the words, which is where it started.
+ */
+async function rankByMeaning(
+  orgId: string,
+  shelf: FileMeta[],
+  query: string,
+): Promise<Map<string, number> | null> {
+  if (!embeddingsReady() || shelf.length === 0) return null;
+
+  try {
+    const pending = indexing.get(orgId) ?? Promise.resolve();
+    const work = pending.then(
+      () => catchUp(orgId, shelf),
+      () => catchUp(orgId, shelf),
+    );
+    indexing.set(orgId, work);
+    const store = await work;
+    if (indexing.get(orgId) === work) indexing.delete(orgId);
+
+    const [asked] = await embed([query]);
+    if (!asked) return null;
+    const wanted = new Float32Array(asked);
+
+    const scores = new Map<string, number>();
+    for (const meta of shelf) {
+      const entry = store.entries[meta.id];
+      if (!entry) continue;
+      // The closest passage, not the average: a long document that answers the
+      // question on one page is still the document that answers it.
+      let best = 0;
+      for (const packed of entry.chunks) {
+        best = Math.max(best, similarity(wanted, unpackVector(packed)));
+      }
+      scores.set(meta.id, best);
+    }
+    return scores;
+  } catch (error) {
+    console.error("Embeddings:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+/**
+ * Ranked by what the query means, with anything that matches its words outright
+ * kept regardless — so this is never worse at finding a file than reading the
+ * words was, only better at finding the ones worded differently.
  */
 export async function listFiles(
   orgId: string,
@@ -72,24 +281,32 @@ export async function listFiles(
 ): Promise<FileMeta[]> {
   const index = await readIndex(orgId);
   const limit = Math.min(Math.max(filter.limit ?? 50, 1), 200);
-  const found: FileMeta[] = [];
+  const shelf = index.filter((meta) => onShelf(meta, filter));
+  if (!filter.query?.trim()) return shelf.slice(0, limit);
 
-  for (const meta of index) {
-    let haystack = `${meta.title} ${meta.tags.join(" ")}`.toLowerCase();
-    // A dump is megabytes of ids and amounts: reading it to grep for a word
-    // costs a great deal and matches by accident. Its title is what it is.
-    if (
-      filter.query &&
-      meta.records === undefined &&
-      !haystack.includes(filter.query.toLowerCase())
-    ) {
-      haystack += ` ${(await loadBody(orgId, meta.id)).toLowerCase()}`;
-    }
-    if (matches(meta, filter, haystack)) found.push(meta);
-    if (found.length >= limit) break;
+  const words = terms(filter.query);
+  const literal = new Set<string>();
+  for (const meta of shelf) {
+    if (await hasEveryWord(orgId, meta, words)) literal.add(meta.id);
   }
 
-  return found;
+  const meaning = await rankByMeaning(orgId, shelf, filter.query);
+  if (!meaning) return shelf.filter((meta) => literal.has(meta.id)).slice(0, limit);
+
+  const best = Math.max(...meaning.values(), 0);
+  const near = Math.max(best * MEANING_RATIO, MEANING_FLOOR);
+
+  return shelf
+    .map((meta) => ({
+      meta,
+      score:
+        (meaning.get(meta.id) ?? 0) + (literal.has(meta.id) ? LITERAL_BONUS : 0),
+      kept: literal.has(meta.id) || (meaning.get(meta.id) ?? 0) >= near,
+    }))
+    .filter((row) => row.kept)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((row) => row.meta);
 }
 
 async function loadBody(orgId: string, fileId: string): Promise<string> {
@@ -148,6 +365,7 @@ interface FileInput {
   tags?: string[];
   sourceUrl?: string;
   records?: number;
+  asked?: string;
 }
 
 /**
@@ -172,6 +390,7 @@ function newMeta(input: FileInput, chars: number, mime?: string): FileMeta {
     ...(mime ? { mime } : {}),
     ...(input.sourceUrl ? { sourceUrl: input.sourceUrl } : {}),
     ...(input.records === undefined ? {} : { records: input.records }),
+    ...(input.asked ? { asked: input.asked } : {}),
     createdAt: new Date().toISOString(),
   };
 }
@@ -284,9 +503,20 @@ export async function closeDataset(
 export async function deleteFile(orgId: string, fileId: string): Promise<void> {
   await rm(bodyPath(orgId, fileId), { force: true });
   await rm(bodyPath(orgId, fileId, true), { force: true });
+  await dropVector(orgId, fileId);
   await writeIndex(
     orgId,
     (await readIndex(orgId)).filter((m) => m.id !== fileId),
+  );
+}
+
+/** Ids are never reused, but a stale vector would be read on every search. */
+async function dropVector(orgId: string, fileId: string): Promise<void> {
+  const store = await readVectors(orgId);
+  if (!store.entries[fileId]) return;
+  delete store.entries[fileId];
+  await writeFile(vectorsPath(orgId), JSON.stringify(store), "utf8").catch(
+    () => {},
   );
 }
 

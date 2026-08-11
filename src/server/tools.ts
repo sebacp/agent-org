@@ -4,15 +4,21 @@ import type { AllowedSource } from "@/lib/source-types";
 import type { LibraryPermission } from "@/lib/types";
 import { fileLinkedAssets } from "@/server/assets";
 import {
+  constants,
+  crossTab,
   extractRecords,
   fieldsOf,
+  minorUnits,
   moneyUnit,
   parseJsonl,
   queryDataset,
+  sampleJsonl,
+  splitters,
   toJsonl,
   type Filter,
   type MoneyUnit,
   type Query,
+  type Splitter,
 } from "@/server/dataset";
 import { asText, download } from "@/server/download";
 import {
@@ -34,6 +40,7 @@ import {
   sourceToolArgs,
   type ToolArgs,
 } from "@/server/mcp";
+import { runPython, sandboxReady } from "@/server/sandbox";
 import { createTask, listTasks, updateTask } from "@/server/tasks";
 
 export interface ToolSchema {
@@ -49,6 +56,8 @@ export interface ToolSchema {
 export interface ToolOutcome {
   summary: string;
   content: string;
+  /** What the line summarises, kept so the trace can be checked, not believed. */
+  detail?: string;
   fileId?: string;
   taskId?: string;
   /** Whose data this went out for, so the line can be shown under its logo. */
@@ -63,11 +72,13 @@ export const TOOLS: ToolSchema[] = [
     function: {
       name: "buscar_archivos",
       description:
-        "Busca en la biblioteca de la empresa por texto. Devuelve los archivos cuyo título, etiquetas o contenido coinciden. Usalo antes de responder cualquier cosa que ya pueda estar escrita.",
+        "Busca en la biblioteca de la empresa por significado: encuentra archivos que hablan de lo que preguntás aunque estén escritos con otras palabras. Usalo antes de responder cualquier cosa que ya pueda estar escrita, y antes de volcar de una fuente algo que quizás ya está acá.",
       parameters: {
         type: "object",
         properties: {
-          consulta: string("Palabras a buscar, en minúsculas."),
+          consulta: string(
+            "Qué estás buscando, en tus propias palabras. Una frase entera anda mejor que una palabra suelta.",
+          ),
           limite: {
             type: "integer",
             description: "Cuántos resultados como máximo. Por defecto 10.",
@@ -245,6 +256,29 @@ export const TOOLS: ToolSchema[] = [
   {
     type: "function",
     function: {
+      name: "calcular",
+      description:
+        "Escribí Python y te devuelvo lo que imprima. Usalo para toda cuenta que consultar_archivo no pueda decir en una sola métrica: un valor derivado de cada registro, una suma ponderada, normalizar plata a otra unidad de tiempo, cruzar dos archivos, cualquier cosa con condiciones. Y cuando lo que te piden es un listado y no un número — filtrar un volcado, juntar dos, quedarte con unas columnas —, llamá a guardar(\"título\", registros) adentro del script y queda archivado en la biblioteca de una sola vez, sin pasarte los registros por delante. Nunca imprimas un listado para después copiarlo a mano ni lo cortes en pedazos: eso es lo que guardar() evita. Es también la forma de no equivocarte: la máquina hace la aritmética y el script queda escrito en el hilo para que otro lo revise. No hagas de cabeza cuentas que puedas hacer acá.",
+      parameters: {
+        type: "object",
+        properties: {
+          script: string(
+            "El código. Sólo ves lo que imprimas con print, así que imprimí el resultado — nunca los registros enteros. Tenés la biblioteca estándar (json, decimal, collections, statistics, datetime); usá Decimal para plata. No hay red ni disco: lo único que sale de acá es lo que imprimas y lo que le pases a guardar(titulo, registros), que archiva esa lista como un volcado nuevo y devuelve cuántos entraron. Podés llamarlo más de una vez, con títulos distintos.",
+          ),
+          archivos: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              'Los archivos de datos que necesita, por título o id. Llegan ya parseados y crudos, tal como los guardó la fuente: si pedís uno solo está en `registros`, y siempre en `datos["título"]`. Si los registros tienen un campo `currency`, toda la plata que haya adentro — al nivel que esté, se llame amount, unit_amount o total — es un entero en la unidad mínima de esa moneda: 1500 son quince dólares, y hay que dividir por 100 antes de leerlo como cifra.',
+          },
+        },
+        required: ["script"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "borrar_archivo",
       description:
         "Borra un archivo de la biblioteca, para siempre y para todos. Usalo sólo para lo que quedó mal o duplicado, y nunca sobre algo que escribió otro sin estar seguro. Si dudás, dejalo y decilo en tu respuesta.",
@@ -323,7 +357,12 @@ export async function toolsFor(
       }),
     ),
   );
+  // Offering it where there is nowhere safe to run it would only get a script
+  // written that has to be refused; on those machines the cuentas stay as they
+  // were, asked one métrica at a time.
+  const penned = await sandboxReady();
   const own = TOOLS.filter((tool) => {
+    if (tool.function.name === "calcular" && !penned) return false;
     const needs = LIBRARY_GATED[tool.function.name];
     return !needs || library.includes(needs);
   });
@@ -349,6 +388,32 @@ function trimAnswer(text: string, tool: string): string {
   ].join("\n\n");
 }
 
+/** What the trace keeps of an answer: enough to check it, not the whole export. */
+const MAX_DETAIL_CHARS = 24_000;
+
+/**
+ * The call as it went out and the answer as it came back, kept beside the line
+ * that summarises it. What the model reads is trimmed and sometimes rewritten,
+ * and what the line says is the model's account of it — so without this there
+ * is no way to tell a source that answered nothing from one that answered
+ * something else than what got reported.
+ */
+function exchange(
+  tool: string,
+  args: Record<string, unknown>,
+  answer: string,
+): string {
+  const sent = JSON.stringify(args, null, 2);
+  const extra = answer.length - MAX_DETAIL_CHARS;
+  return [
+    `${tool}(${sent === "{}" ? "" : sent})`,
+    "",
+    extra > 0
+      ? `${answer.slice(0, MAX_DETAIL_CHARS)}\n[…y ${extra.toLocaleString("es-AR")} caracteres más]`
+      : answer,
+  ].join("\n");
+}
+
 const STATE_LABEL: Record<string, string> = {
   blocked: "esperando respuesta",
   open: "listo para retomar",
@@ -367,6 +432,10 @@ function asLimit(value: unknown, fallback: number): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function asRecordArg(value: unknown): Record<string, unknown> {
@@ -494,6 +563,38 @@ async function cursorPath(
   return { path: null, bag: bags.find((name) => isRecord(args[name])) ?? null };
 }
 
+/** Asking for fewer records at a time doesn't leave any of them out. */
+const PAGING_ARGS = new Set([...CURSOR_ARGS, "limit", "per_page", "page_size"]);
+
+/**
+ * How the call narrowed the listing. The conditions usually travel one level
+ * down, in whatever bag the function calls its parameters, so the levels are
+ * flattened: what matters is the condition, not where in the call it sat.
+ */
+function narrowing(args: Record<string, unknown>): string {
+  const kept: string[] = [];
+  const walk = (bag: Record<string, unknown>, prefix: string, depth: number) => {
+    for (const [name, value] of Object.entries(bag)) {
+      if (PAGING_ARGS.has(name) || value === undefined || value === null) {
+        continue;
+      }
+      if (isRecord(value)) {
+        // The outermost bag is where the function keeps its arguments and adds
+        // nothing to what any of them says; below that the name is half the
+        // condition, as in created.gte.
+        if (depth < 2) walk(value, depth === 0 ? prefix : `${name}.`, depth + 1);
+        continue;
+      }
+      // A list of fields to expand asks for more of each record, not for fewer
+      // records; only a condition on a value leaves anything out.
+      if (Array.isArray(value)) continue;
+      kept.push(`${prefix}${name}=${String(value)}`);
+    }
+  };
+  walk(args, "", 0);
+  return kept.join(", ").slice(0, 400);
+}
+
 /** A run's worth of pages: past this, something is looping or is too big. */
 const MAX_DUMP_PAGES = 200;
 const MAX_DUMP_RECORDS = 200_000;
@@ -556,6 +657,13 @@ async function dumpFromSource(
   }
 
   const callArgs = { ...asRecordArg(args.argumentos) };
+  /**
+   * What was asked for, minus how it was paged. A dump that went out with a
+   * filter comes back as a whole file with nothing on it saying the listing was
+   * bigger — the count is right, the fields are right, and the records the
+   * filter excluded are simply not a thing anybody downstream can ask about.
+   */
+  const asked = narrowing(callArgs);
   const { path, bag } = await cursorPath(
     orgId,
     found.source,
@@ -598,6 +706,13 @@ async function dumpFromSource(
   let complete = false;
   /** Where to pick up if this stops early; empty means there is nowhere. */
   let pending: string | null = null;
+  /**
+   * The first page as the source wrote it. A dump is the one call whose answer
+   * nobody ever sees — the rows go straight to a file and what comes back is a
+   * count — so it is also the one where a filter applied at the source, or a
+   * shape that isn't what was expected, would otherwise leave no trace.
+   */
+  let firstPage = "";
   const started = Date.now();
 
   /**
@@ -622,11 +737,13 @@ async function dumpFromSource(
       // A server refusing an argument it never declared is the guess being
       // wrong, not the listing ending.
       if (tryNextName()) continue;
-      stop = `La fuente cortó en la página ${pages + 1}: ${
-        error instanceof Error ? error.message : "error desconocido"
-      }.`;
+      const message =
+        error instanceof Error ? error.message : "error desconocido";
+      stop = `La fuente cortó en la página ${pages + 1}: ${message}.`;
+      firstPage ||= exchange(found.tool, callArgs, message);
       break;
     }
+    firstPage ||= exchange(found.tool, callArgs, answer);
 
     const extracted = extractRecords(answer);
     const records = extracted?.records ?? [];
@@ -637,6 +754,7 @@ async function dumpFromSource(
         return {
           summary: `volcó ${found.tool} · sin registros`,
           content: `Esa llamada no devolvió registros que pueda volcar. Esto es lo que contestó:\n\n${trimAnswer(answer, found.tool)}`,
+          detail: firstPage,
           source: ref,
         };
       }
@@ -675,6 +793,7 @@ async function dumpFromSource(
         area: agent.department,
         tags: ["datos", found.tool],
         records: records.length,
+        asked,
       });
     }
 
@@ -734,6 +853,7 @@ async function dumpFromSource(
     return {
       summary: "no pudo volcar",
       content: "No pude escribir en ese archivo. Probá con otro título.",
+      detail: firstPage,
       source: ref,
     };
   }
@@ -755,16 +875,23 @@ async function dumpFromSource(
     summary: `volcó ${total.toLocaleString("es-AR")} registros${
       meta.partial ? " · incompleto" : ""
     } · "${meta.title}"`,
+    detail:
+      pages > 1
+        ? `${firstPage}\n\n[Esta es la primera de ${pages} páginas; el resto entró al archivo igual que esta.]`
+        : firstPage,
     // Counts and field names: the rows themselves are the whole point of not
     // returning them, and a model given a sample starts reporting off it.
     content: [
       `"${meta.title}" quedó con ${total.toLocaleString("es-AR")} registros (${pages} ${pages === 1 ? "página" : "páginas"} de ${ref.label}).`,
       `Campos: ${fields.join(", ")}.`,
+      narrowWarning(meta),
       meta.partial
         ? `OJO: el volcado quedó incompleto. ${meta.partial} Cualquier cifra que saques de este archivo va a estar corta: no la des como total sin decir que falta gente adentro.`
         : stop || "Recorrí la paginación hasta el final: el volcado está completo.",
       "No leas este archivo: analizalo con consultar_archivo.",
-    ].join("\n"),
+    ]
+      .filter(Boolean)
+      .join("\n"),
     fileId: meta.id,
     source: ref,
   };
@@ -820,6 +947,254 @@ function shortWarning(meta: FileMeta): string {
     : "";
 }
 
+/**
+ * A dump that went out with a filter looks from the inside exactly like the
+ * whole listing: full pagination, nothing missing, every record consistent.
+ * What it left out is the one thing it can't be asked about, so what was asked
+ * travels with the file the same way an incomplete dump's reason does.
+ */
+function narrowWarning(meta: FileMeta): string {
+  return meta.asked
+    ? `OJO: "${meta.title}" no es el listado entero. Se pidió con ${meta.asked}, así que lo que no cumpla eso no está acá y este archivo no lo puede contar ni desmentir. Si necesitás el total de todo, volcá también el resto; si informás lo de acá, decí sobre qué población es.`
+    : "";
+}
+
+/**
+ * A script over the volcados, run where it can't reach anything. The point is
+ * not speed, though thirty round trips becoming one is most of it: it is that
+ * the arithmetic stops happening in the model's head, and what was counted is
+ * written down instead of being something you have to take its word for.
+ */
+async function compute(
+  orgId: string,
+  args: Record<string, unknown>,
+  agent: { role: string; department: string },
+  library: LibraryPermission[],
+): Promise<ToolOutcome> {
+  const script = asString(args.script).trim();
+  if (!script) {
+    return { summary: "no mandó script", content: "Mandá el código en `script`." };
+  }
+
+  const wanted = Array.isArray(args.archivos)
+    ? args.archivos.map((name) => String(name).trim()).filter(Boolean)
+    : [];
+  const datasets: Record<string, string> = {};
+  const index = await listFiles(orgId, { limit: 200 });
+  const warnings: string[] = [];
+  /** The fields the records came divided by, to see what a copy of them loses. */
+  const criteria = new Set<string>();
+  let readRecords = 0;
+
+  for (const name of wanted) {
+    const meta =
+      (await findByTitle(orgId, name)) ?? index.find((m) => m.id === name);
+    if (!meta) {
+      return {
+        summary: `no encontró "${name}"`,
+        content: `No hay ningún archivo con título o id "${name}". Mirá cuáles hay con listar_archivos.`,
+      };
+    }
+    if (meta.records === undefined) {
+      return {
+        summary: `"${meta.title}" no es un volcado`,
+        content: `"${meta.title}" es un documento, no un archivo de datos: no tiene registros que recorrer. Leelo con leer_archivo.`,
+      };
+    }
+    const jsonl = await readDataset(orgId, meta.id);
+    datasets[meta.title] = jsonl;
+    const seen = sampleJsonl(jsonl, 400);
+
+    // A script can only be wrong about the records it was given. Which listing
+    // they were taken out of is the one thing it cannot check for itself.
+    const narrow = narrowWarning(meta);
+    if (narrow) warnings.push(narrow);
+
+    // consultar_archivo converts the money it returns and says so; a script gets
+    // the records exactly as the source wrote them and is told nothing, which is
+    // how a company read a five thousand dollar MRR as four hundred and eighty
+    // five thousand.
+    const unit = minorUnits(seen);
+    if (unit) {
+      const example = (1500 / unit.divisor).toLocaleString("es-AR", {
+        minimumFractionDigits: 2,
+      });
+      warnings.push(
+        [
+          `OJO con "${meta.title}": viene de una API de pagos y guarda la plata como número entero en la unidad mínima de la moneda (${unit.currencies.join(", ")}), así que 1500 son ${example} y no mil quinientos.`,
+          `Vale para todo campo de plata, al nivel que esté y se llame amount, unit_amount, total o como sea: dividilo por ${unit.divisor} antes de leerlo como una cifra.`,
+          script.includes(String(unit.divisor))
+            ? ""
+            : `Tu script no menciona el ${unit.divisor} en ninguna parte, así que lo más probable es que lo que sacaste esté ${unit.divisor} veces arriba. Revisalo antes de informarlo.`,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+    }
+
+    // A dump of subscriptions carries the ones that renew and the ones already
+    // marked to end in the same column, and every MRR built off it came out a
+    // sixth high because nothing said so: the flag was there, in a record five
+    // thousand characters long, and the script never looked at it.
+    const groups = splitters(seen);
+    for (const group of groups) criteria.add(group.field);
+    readRecords += meta.records;
+
+    const missed = groups.filter(
+      (s) => !new RegExp(`\\b${escapeRegExp(s.field)}\\b`).test(script),
+    );
+    if (missed.length === 0) continue;
+    warnings.push(
+      [
+        `"${meta.title}" viene partido por ${missed.length === 1 ? "un campo que tu script no nombra" : "campos que tu script no nombra"}: ${missed
+          .slice(0, 4)
+          .map(
+            (s) =>
+              `${s.field} (${s.values
+                .slice(0, 5)
+                .map(([value, count]) => `${value} ${count}`)
+                .join(", ")})`,
+          )
+          .join("; ")}, sobre ${seen.length} registros de muestra.`,
+        "Los sumaste todos juntos. Si el número que vas a informar no vale igual para cada grupo, contá por separado y decí con qué criterio: un total sobre una población que nadie eligió no es un dato.",
+      ].join(" "),
+    );
+  }
+
+  const names = Object.keys(datasets);
+  const over = names.length > 0 ? ` sobre ${names.map((n) => `"${n}"`).join(" y ")}` : "";
+  const result = await runPython(script, datasets);
+
+  if (!result.ok) {
+    return {
+      summary: `el script falló${over}`,
+      detail: script,
+      content: [
+        "El script cortó. Esto dijo Python:",
+        result.error || "Sin mensaje.",
+        result.output ? `\nAlcanzó a imprimir:\n${result.output}` : "",
+        "\nArreglalo y volvé a llamar a calcular. No inventes el resultado.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    };
+  }
+
+  const filed: string[] = [];
+  for (const [title, body] of Object.entries(result.emitted)) {
+    if (!library.includes("write")) {
+      return {
+        summary: "quiso guardar y no puede escribir",
+        detail: script,
+        content:
+          "El script llamó a guardar(), pero no tenés permiso de escritura en la biblioteca. Sacá esa llamada y devolvé lo que haga falta en tu respuesta, o pedile a quien sí puede escribir que lo archive.",
+      };
+    }
+    // Replacing a file from inside a script would let a bad filter erase the
+    // dump it was filtering, and the trace would only say it calculated.
+    if (await findByTitle(orgId, title)) {
+      return {
+        summary: `"${title}" ya existe`,
+        detail: script,
+        content: `Ya hay un archivo llamado "${title}" y no lo piso desde un script. Guardá con otro título, o borrá ese primero si de verdad lo querés reemplazar.`,
+      };
+    }
+    if (result.overflowed) {
+      return {
+        summary: "guardó de más y lo corté",
+        detail: script,
+        content:
+          "El script mandó a guardar más de lo que puedo archivar de una vez, así que no guardé nada: media lista en la biblioteca parece una lista entera. Acotá lo que guardás, o partilo en llamadas con títulos distintos.",
+      };
+    }
+    const records = body.split("\n").filter(Boolean).length;
+    const meta = await saveFile(orgId, {
+      title,
+      content: body,
+      author: agent.role,
+      area: agent.department,
+      tags: ["datos", "calculado"],
+      records,
+    });
+    filed.push(`"${meta.title}" con ${records.toLocaleString("es-AR")} registros`);
+
+    // A copy with a row for every row is a rewrite of the same listing, and
+    // whatever it left out is gone for whoever reads the copy instead of the
+    // original. That is how a wrong MRR became unarguable: the file the CFO
+    // totalled had a column of monthly amounts and no longer said which of
+    // them belonged to subscriptions already on their way out.
+    if (criteria.size === 0 || records < readRecords / 2) continue;
+    const kept = new Set(fieldsOf(sampleJsonl(body, 200)));
+    const lost = [...criteria].filter((field) => !kept.has(field));
+    if (lost.length > 0) {
+      warnings.push(
+        `"${meta.title}" tiene una fila por cada registro del original pero ya no lleva ${lost.join(", ")}, que es por donde el original venía partido. Quien lea este archivo va a sacar totales sin poder elegir el criterio ni notar que hay uno. Si lo vas a dejar para que otro lo use, volvé a guardarlo con ${lost.length === 1 ? "esa columna" : "esas columnas"} adentro.`,
+      );
+    }
+  }
+
+  // A script that computed everything, printed nothing and filed nothing has
+  // produced nothing: the process is gone and with it whatever it worked out.
+  if (!result.output.trim() && filed.length === 0) {
+    return {
+      summary: `el script no imprimió nada${over}`,
+      detail: script,
+      content:
+        "Corrió sin errores pero no imprimió nada ni guardó nada, así que no tengo resultado. Volvé a llamarlo con print() sobre lo que querés saber, o con guardar() si lo que querías era dejar un listado en la biblioteca.",
+    };
+  }
+
+  const counted = names
+    .map((name) => `${name}: ${datasets[name].split("\n").filter(Boolean).length}`)
+    .join(", ");
+  const wrote = filed.length > 0 ? ` · guardó ${filed.length}` : "";
+  return {
+    summary: `calculó${over}${wrote} · ${result.ms} ms`,
+    detail: script,
+    content: [
+      // Above the number, because after it the number is already the answer.
+      ...warnings.map((warning) => `${warning}\n`),
+      names.length > 0 ? `Corrió sobre ${counted} registros.` : "",
+      filed.length > 0
+        ? `Quedó en la biblioteca: ${filed.join(", ")}. Es un archivo de datos como cualquier otro: preguntale con consultar_archivo o pasáselo de nuevo a calcular. No hace falta que lo copies a tu respuesta.`
+        : "",
+      result.output.trim() ? "Lo que imprimió:" : "",
+      result.output.trim() ? result.output : "",
+      "\nEste resultado salió de tu script, que quedó guardado en el hilo. Usalo tal cual: no lo redondees ni lo recalcules de cabeza.",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  };
+}
+
+/**
+ * The two fields that most divide the dump, one against the other. Read apart
+ * they are two separate facts and the combinations have to be imagined, which
+ * is where a model put revenue against subscriptions that had already ended.
+ */
+function crossed(
+  records: Record<string, unknown>[],
+  groups: Splitter[],
+): string {
+  if (groups.length < 2) return "";
+  // The one with the most values reads better down the side than across.
+  const [rows, columns] = [...groups]
+    .sort((a, b) => b.values.length - a.values.length)
+    .slice(0, 2);
+  const table = crossTab(records, rows, columns);
+  if (!table) return "";
+  return [
+    `Cómo se cruzan: ${rows.field} × ${columns.field}.`,
+    ...table.map(
+      (row) =>
+        `  ${row.value}: ${row.counts
+          .map(([value, count]) => `${value} ${count.toLocaleString("es-AR")}`)
+          .join(", ")}`,
+    ),
+    "Fijate en las combinaciones antes de contar: puede haber registros que un campo cuenta adentro y el otro deja afuera, y ahí es donde se decide el número.",
+  ].join("\n");
+}
+
 async function queryFile(
   orgId: string,
   args: Record<string, unknown>,
@@ -852,16 +1227,48 @@ async function queryFile(
     // The sample below shows `"amount":900` beside `"currency":"usd"`, and that
     // has already been read as nine hundred dollars once.
     const monetary = fields.filter((field) => moneyUnit(records, field));
+    // One record can't show that a field divides the listing, and on a dump
+    // whose records run to five thousand characters it gets cut off before the
+    // flag that decides who counts is even visible. So the groups are counted
+    // here, where whoever is about to write the script still has a choice.
+    const groups = splitters(records);
+    // The other half of the same question. A field that never varies is not a
+    // property of the listing, it is the shape of what was asked for it, and it
+    // reads as a fact about the world right up until somebody counts on it.
+    const fixed = constants(records).slice(0, 8);
     return {
       summary: `miró "${meta.title}" · ${records.length} registros${
         meta.partial ? " · incompleto" : ""
       }`,
       content: [
         shortWarning(meta),
+        narrowWarning(meta),
         `"${meta.title}" tiene ${records.length} registros.`,
         `Campos: ${fields.join(", ")}.`,
         monetary.length > 0
           ? `Ojo con ${monetary.join(", ")}: acá abajo los vas a ver en la unidad mínima de la moneda, que es como los guarda la fuente. No los leas como si fueran la cifra final. Cuando pidas una métrica sobre ellos te los devuelvo ya convertidos.`
+          : "",
+        groups.length > 0
+          ? [
+              `Este archivo no es homogéneo: viene partido por ${groups
+                .map(
+                  (group) =>
+                    `${group.field} (${group.values
+                      .map(
+                        ([value, count]) =>
+                          `${value}: ${count.toLocaleString("es-AR")}`,
+                      )
+                      .join(", ")})`,
+                )
+                .join("; ")}.`,
+              "Antes de sacar cualquier total decidí cuáles de esos grupos entran y cuáles no, y decilo cuando informes el número. Un total sobre todos los registros juntos es un total sobre una población que nadie eligió.",
+            ].join(" ")
+          : "",
+        crossed(records, groups),
+        fixed.length > 0
+          ? `Todos los registros tienen el mismo valor en ${fixed
+              .map(([field, value]) => `${field}=${value}`)
+              .join(", ")}. Si la fuente tiene registros con otro valor en alguno de esos campos, no están en este archivo: no los sumes ni los descartes desde acá, porque acá no se ven.`
           : "",
         sample
           ? `Un registro de ejemplo:\n${JSON.stringify(sample, null, 2).slice(0, 4_000)}`
@@ -889,17 +1296,39 @@ async function queryFile(
       ? moneyUnit(records, query.campo ?? "")
       : null;
 
+  // The same silence as in a script, one level up: a metric over the whole file
+  // is a metric over every group in it, and the answer below says a number
+  // without saying whose.
+  const named = new Set(
+    [query.agruparPor ?? "", ...(query.filtros ?? []).map((f) => f.campo)].filter(
+      Boolean,
+    ),
+  );
+  const missed = splitters(records).filter((s) => !named.has(s.field));
+
   return {
     summary: `consultó "${meta.title}" · ${result.matched} de ${result.total}${
       meta.partial ? " · incompleto" : ""
     }`,
     content: [
       shortWarning(meta),
+      narrowWarning(meta),
       `Sobre "${meta.title}": ${result.matched} de ${result.total} registros pasaron el filtro.`,
       money
         ? `"${query.campo}" viene guardado en la unidad mínima de la moneda, que es como lo devuelve la fuente. Ya lo convertí: la tabla está en ${money.currencies.join(" y ").toUpperCase()} y esos números se informan tal cual. No los vuelvas a dividir ni a multiplicar.`
         : "",
       renderGroups(result, query, money),
+      missed.length > 0
+        ? `Esto mezcla grupos que no separaste: ${missed
+            .map(
+              (s) =>
+                `${s.field} (${s.values
+                  .slice(0, 5)
+                  .map(([value, count]) => `${value}: ${count.toLocaleString("es-AR")}`)
+                  .join(", ")})`,
+            )
+            .join("; ")}. Si el número de arriba no vale igual para cada uno, volvé a preguntar agrupando o filtrando por ${missed.length === 1 ? "ese campo" : "esos campos"}, y decí con qué criterio contaste.`
+        : "",
       result.skipped > 0
         ? `[${result.skipped} registros no tenían un número en "${query.campo ?? ""}" y quedaron fuera del cálculo.]`
         : "",
@@ -981,15 +1410,17 @@ export async function runTool(
           ? `consultó ${remote.tool} · guardó "${kept.title}"`
           : `consultó ${remote.tool}`,
         content: text,
+        detail: exchange(remote.tool, args, whole),
         source: ref,
         ...(kept ? { fileId: kept.id } : {}),
       };
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "error desconocido";
       return {
         summary: `falló · ${remote.tool}`,
-        content: `La fuente no respondió: ${
-          error instanceof Error ? error.message : "error desconocido"
-        }. Seguí con lo que tengas o dejá un pendiente.`,
+        content: `La fuente no respondió: ${message}. Seguí con lo que tengas o dejá un pendiente.`,
+        detail: exchange(remote.tool, args, message),
         source: ref,
       };
     }
@@ -1161,6 +1592,9 @@ export async function runTool(
 
     case "consultar_archivo":
       return queryFile(orgId, args);
+
+    case "calcular":
+      return compute(orgId, args, agent, library);
 
     case "borrar_archivo": {
       const file = await getFile(orgId, asString(args.id));

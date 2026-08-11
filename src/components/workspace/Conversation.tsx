@@ -81,7 +81,7 @@ function TraceLine({
 
   const failed = step.kind === "failed";
 
-  return (
+  const line = (
     <p
       className={`flex gap-2 px-1 text-[12px] leading-relaxed ${
         failed ? "text-red-700" : "text-faint"
@@ -110,12 +110,45 @@ function TraceLine({
             {step.source.label}
           </span>
         ) : null}
+        {/* What the line is a summary of. A número nobody can check is a número
+          nobody can contradict, which is how two agents agree on a wrong one.
+          For a source it is the exchange itself: the line is the model's
+          account of the answer, this is the answer. */}
+        {step.detail ? (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="ml-1.5 text-[11px] text-faint underline decoration-hairline underline-offset-2 transition-colors hover:text-ink"
+          >
+            {open
+              ? "ocultar"
+              : step.source
+                ? "ver la respuesta"
+                : "ver la cuenta"}
+          </button>
+        ) : null}
         {/* A failure is an ending; anything else still has something behind it. */}
         {active && !failed ? (
           <span className="ml-1.5 inline-block size-2.5 animate-spin rounded-full border border-hairline border-t-dim align-[-1px]" />
         ) : null}
       </span>
     </p>
+  );
+
+  if (!step.detail) return line;
+
+  return (
+    <div>
+      {line}
+      {/* An answer arrives as one line of JSON as often as not, so it wraps
+        rather than scrolls, and is boxed: some of them are thousands of lines
+        and the rest of the trace still has to be readable. */}
+      {open ? (
+        <pre className="mt-1.5 ml-6 max-h-96 overflow-auto rounded-lg border border-hairline bg-panel px-3 py-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-dim">
+          {step.detail}
+        </pre>
+      ) : null}
+    </div>
   );
 }
 

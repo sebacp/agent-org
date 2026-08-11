@@ -72,6 +72,17 @@ export default function FileViewer({
                   Este volcado quedó incompleto: faltan registros. {file.partial}
                 </p>
               ) : null}
+              {/* Complete, and still not the listing. Which part of it this is
+                only shows in what was asked for. */}
+              {file.asked ? (
+                <p className="mb-4 rounded-lg border border-hairline bg-panel px-4 py-3 text-[12px] leading-relaxed text-dim">
+                  Se pidió a la fuente con{" "}
+                  <span className="font-mono text-[11px] text-ink">
+                    {file.asked}
+                  </span>
+                  . Lo que no cumpla eso no está en este archivo.
+                </p>
+              ) : null}
               {isImage(file) ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img

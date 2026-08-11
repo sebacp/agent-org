@@ -107,6 +107,142 @@ export function parseJsonl(body: string): Record<string, unknown>[] {
   return records;
 }
 
+/**
+ * Records taken evenly across the whole dump instead of off the top. A listing
+ * arrives sorted — by date, by state, by whatever the source indexes on — so
+ * the first hundred rows are the one part of it where a field that divides the
+ * listing in two can look like it never varies.
+ */
+export function sampleJsonl(
+  body: string,
+  count: number,
+): Record<string, unknown>[] {
+  const lines = body.split("\n").filter((line) => line.trim());
+  const step = Math.max(1, Math.floor(lines.length / count));
+  const records: Record<string, unknown>[] = [];
+  for (let i = 0; i < lines.length && records.length < count; i += step) {
+    try {
+      const record = asRecord(JSON.parse(lines[i]));
+      if (record) records.push(record);
+    } catch {
+      // One unreadable line says nothing about the rest.
+    }
+  }
+  return records;
+}
+
+export interface Splitter {
+  field: string;
+  /** Each value and how many of the sampled records carry it, biggest first. */
+  values: [string, number][];
+}
+
+/** Past this a field is a name or an id, not a criterion anybody counts by. */
+const MAX_SPLIT_VALUES = 8;
+
+/** Every categorical field and how its values fall, over one pass. */
+function tally(
+  records: Record<string, unknown>[],
+): Map<string, Map<string, number>> {
+  const counts = new Map<string, Map<string, number>>();
+  for (const record of records) {
+    for (const [field, value] of Object.entries(record)) {
+      // A number is as often an amount as a category, and warning about an
+      // amount teaches whoever reads it to skip the warning.
+      if (typeof value !== "boolean" && typeof value !== "string") continue;
+      let seen = counts.get(field);
+      if (!seen) counts.set(field, (seen = new Map()));
+      // One over the cap is enough to disqualify it and stops the map growing
+      // to one entry per row on an id.
+      if (seen.size > MAX_SPLIT_VALUES) continue;
+      const key = String(value);
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+/**
+ * The fields that cut a dump into groups: a state, a flag, a plan. They are
+ * what a total decides about without saying so — a listing of subscriptions
+ * holds the ones that renew and the ones already ending in the same column, and
+ * the sum of it is a number for a population nobody chose.
+ *
+ * Only the ones that divide *these* records: a field with one value throughout
+ * decides nothing, and one that most records don't carry is a detail of a few
+ * rather than a criterion over all.
+ */
+export function splitters(records: Record<string, unknown>[]): Splitter[] {
+  const enough = records.length / 2;
+  const found: Splitter[] = [];
+  for (const [field, seen] of tally(records)) {
+    if (seen.size < 2 || seen.size > MAX_SPLIT_VALUES) continue;
+    const carried = [...seen.values()].reduce((a, b) => a + b, 0);
+    if (carried < enough) continue;
+    found.push({ field, values: [...seen].sort((a, b) => b[1] - a[1]) });
+  }
+  return found;
+}
+
+/**
+ * The fields that never vary, and the one value each of them has. A criterion
+ * the records all meet is what a filter applied at the source looks like from
+ * this end: the file says `status` and says `active` every time, so a total
+ * over it is a total over the actives and reads like a total over everything.
+ *
+ * The listing this was found on had a thousand subscriptions and the dump had
+ * four hundred, and the two hundred and fifty dollars a month of past_due it
+ * left outside were missing from the answer without anything being wrong in it.
+ */
+export function constants(
+  records: Record<string, unknown>[],
+): [string, string][] {
+  const found: [string, string][] = [];
+  for (const [field, seen] of tally(records)) {
+    if (seen.size !== 1) continue;
+    // Not a criterion the whole listing meets if half the records skip it.
+    const [[value, count]] = [...seen];
+    if (count < records.length) continue;
+    found.push([field, value]);
+  }
+  return found;
+}
+
+/** Beyond this the table is longer than what it is a table of. */
+const MAX_CROSS_CELLS = 24;
+
+/**
+ * How two of those fields fall against each other. One at a time, a listing
+ * looks like two independent questions; crossed, it says which combinations
+ * actually occur — that some of what is running is already flagged to stop, and
+ * that the same flag on something already stopped means nothing.
+ *
+ * Left to guess at it, a model invented a figure for revenue still arriving
+ * from subscriptions that had ended months before.
+ */
+export function crossTab(
+  records: Record<string, unknown>[],
+  rows: Splitter,
+  columns: Splitter,
+): { value: string; counts: [string, number][] }[] | null {
+  if (rows.values.length * columns.values.length > MAX_CROSS_CELLS) return null;
+  const table = new Map<string, Map<string, number>>();
+  for (const record of records) {
+    const row = record[rows.field];
+    const column = record[columns.field];
+    if (row === undefined || column === undefined) continue;
+    const cells = table.get(String(row)) ?? new Map<string, number>();
+    table.set(String(row), cells);
+    cells.set(String(column), (cells.get(String(column)) ?? 0) + 1);
+  }
+  return rows.values
+    .filter(([value]) => table.has(value))
+    .map(([value]) => ({
+      value,
+      counts: [...table.get(value)!].sort((a, b) => b[1] - a[1]),
+    }));
+}
+
 /** Dotted paths, because half of what a source returns is nested. */
 function pick(record: Record<string, unknown>, path: string): unknown {
   let current: unknown = record;
@@ -155,6 +291,37 @@ export interface MoneyUnit {
   currencies: string[];
   /** What the stored integers have to be divided by to become the real figure. */
   divisor: number;
+}
+
+/**
+ * The convention read off the whole dump instead of one field: every record
+ * carrying its own currency is how a payments API says that all the money in it
+ * is a count of the smallest unit.
+ *
+ * `moneyUnit` decides field by field and only over the top level, and most of
+ * what those APIs return has the amount nested inside a list two levels down —
+ * so a script written against the raw records is never told, and reports a
+ * hundred times the figure. This is told once and covers all of it.
+ */
+export function minorUnits(
+  records: Record<string, unknown>[],
+): MoneyUnit | null {
+  const currencies = new Set<string>();
+  for (const record of records.slice(0, 200)) {
+    const currency = record.currency;
+    if (typeof currency !== "string" || !currency.trim()) return null;
+    currencies.add(currency.trim().toLowerCase());
+  }
+  if (currencies.size === 0) return null;
+
+  const exponents = new Set(
+    [...currencies].map((code) =>
+      NO_MINOR_UNIT.has(code) ? 0 : THREE_DECIMALS.has(code) ? 3 : 2,
+    ),
+  );
+  if (exponents.size !== 1) return null;
+  const divisor = 10 ** [...exponents][0];
+  return divisor === 1 ? null : { currencies: [...currencies], divisor };
 }
 
 /**

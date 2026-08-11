@@ -84,6 +84,7 @@ function applyEvent(
           role: role(event.agentId),
           kind: "tool",
           text: event.summary,
+          ...(event.detail ? { detail: event.detail } : {}),
           ...(event.source ? { source: event.source } : {}),
         },
       ]);

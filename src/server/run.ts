@@ -53,6 +53,11 @@ export async function executeRun(
         role: roleOf.get(event.agentId) ?? "",
         kind: event.type as ThreadStep["kind"],
         text,
+        // What the line summarises and where it came from outlive the corrida:
+        // a thread you can only read the conclusions of is one you can only
+        // believe.
+        ...(event.type === "tool" && event.detail ? { detail: event.detail } : {}),
+        ...(event.type === "tool" && event.source ? { source: event.source } : {}),
       });
     }
     // Kept on the server too, so a tab that opens the corrida while it runs

@@ -14,6 +14,7 @@ import {
   systemPrompt,
   type AgentAccess,
 } from "@/server/prompts";
+import { sandboxReady } from "@/server/sandbox";
 import { accessByAgent } from "@/server/sources";
 import { runTool, toolsFor, type ToolSchema } from "@/server/tools";
 
@@ -90,6 +91,9 @@ export async function runOrg(
     ]),
   );
   const directory = directoryPrompt(request, access);
+  // Asked once for the whole corrida: it is a property of the machine, and it
+  // decides both whether the tool is offered and whether the prompt names it.
+  const penned = await sandboxReady();
 
   async function execute(
     agentId: string,
@@ -107,6 +111,7 @@ export async function runOrg(
       departmentById.get(agent.department),
       directory,
       sources.map((s) => s.label || "fuente"),
+      penned,
     );
     // Reaching a source means connecting to it, so the list is only built if a
     // branch actually offers tools.
@@ -134,6 +139,7 @@ export async function runOrg(
         type: "tool",
         agentId,
         summary: outcome.summary,
+        ...(outcome.detail ? { detail: outcome.detail } : {}),
         ...(outcome.fileId ? { fileId: outcome.fileId } : {}),
         ...(outcome.source ? { source: outcome.source } : {}),
       });

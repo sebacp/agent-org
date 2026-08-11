@@ -25,6 +25,13 @@ export interface FileMeta {
   /** Which argument that cursor goes in, when the dump had to work it out. */
   cursorArg?: string;
   /**
+   * What was asked of the source, when the dump narrowed the listing instead of
+   * taking all of it. A filter applied at the source leaves a complete-looking
+   * file that only answers for part of the question, so what it was is written
+   * on it: nothing else downstream can tell that anything was left out.
+   */
+  asked?: string;
+  /**
    * Why a dump is short, when it is. A question asked of an incomplete dump
    * comes back with a figure that reads like a total and isn't, so the reason
    * travels with the file and every answer it gives has to repeat it.
