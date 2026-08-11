@@ -4,4 +4,6 @@ export type OrgTopic =
   | "tasks"
   | "threads"
   | "automations"
-  | "runs";
+  | "runs"
+  | "guards"
+  | "approvals";

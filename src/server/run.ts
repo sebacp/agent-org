@@ -1,8 +1,10 @@
+import { room } from "@/lib/guard-types";
 import type { RunEvent, RunRequest, ThreadStep } from "@/lib/run-types";
-import { addUsage, NO_USAGE, type RunUsage } from "@/lib/usage";
+import { addUsage, formatCost, NO_USAGE, type RunUsage } from "@/lib/usage";
 import { publish } from "@/server/bus";
+import { readGuards, recordSpend } from "@/server/guards";
 import { runOrg } from "@/server/orchestrator";
-import { beginRun, endRun, recordEvent } from "@/server/runs";
+import { beginRun, cancelRun, endRun, recordEvent } from "@/server/runs";
 import { appendTurn, threadTitle } from "@/server/threads";
 
 export interface RunOutcome {
@@ -25,6 +27,20 @@ export async function executeRun(
   const steps: ThreadStep[] = [];
   let usage: RunUsage = NO_USAGE;
 
+  // Asked before anything is spent and not only as it is spent: a company
+  // already past its month should not pay for one more token to find that out.
+  const guards = await readGuards(request.orgId);
+  const left = room(guards);
+  if (left !== null && left <= 0) {
+    throw new Error(
+      `La empresa ya gastó ${formatCost(guards.spent)} este mes y el tope es ${formatCost(
+        guards.monthlyCap,
+      )}. Subilo desde el gasto del mes, o esperá al mes que viene.`,
+    );
+  }
+  /** Whether this is the corrida that hit it, which reads as a plain abort. */
+  let capped = false;
+
   const stepText = (event: RunEvent): string | null => {
     switch (event.type) {
       case "delegate":
@@ -45,6 +61,13 @@ export async function executeRun(
   const send = (event: RunEvent) => {
     if (event.type === "usage") {
       usage = addUsage(usage, { ...event.usage, cost: event.cost });
+      // Checked on every bill rather than at the end, which is the only version
+      // of a tope that stops anything: one asked afterwards only tells you what
+      // the corrida already spent.
+      if (!capped && left !== null && usage.cost >= left) {
+        capped = true;
+        cancelRun(request.orgId, request.threadId);
+      }
     }
     const text = stepText(event);
     if (text !== null && "agentId" in event && event.agentId) {
@@ -92,7 +115,19 @@ export async function executeRun(
     publish(request.orgId, "threads");
 
     return { answer, steps, usage };
+  } catch (error) {
+    // Being cut for money arrives here as the same abort as somebody pressing
+    // Cortar, and "se cortó la corrida" is not something anybody can act on.
+    if (capped) {
+      throw new Error(
+        `Corté la corrida: la empresa llegó al tope de ${formatCost(
+          guards.monthlyCap,
+        )} de este mes.`,
+      );
+    }
+    throw error;
   } finally {
+    await recordSpend(request.orgId, usage.cost);
     endRun(request.orgId, request.threadId);
   }
 }

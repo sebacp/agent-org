@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon, { type IconName } from "@/components/ui/Icon";
+import SpendMeter from "@/components/workspace/SpendMeter";
+import type { GuardState, Guards } from "@/lib/guard-types";
 import type { ActiveRun, RunOrigin, Thread } from "@/lib/run-types";
 import type { PendingTask } from "@/lib/task-types";
 
@@ -84,6 +86,9 @@ interface ThreadRailProps {
   /** Only the ones still armed; a paused one is not going to wake up. */
   automationCount: number;
   automationsOpen: boolean;
+  /** The tope and what the month has spent against it. */
+  guards: GuardState;
+  onGuards: (patch: Partial<Guards>) => void;
   onNew: () => void;
   onOpen: (thread: Thread) => void;
   /** Follows a corrida that is still going, wherever it was set off. */
@@ -108,6 +113,8 @@ export default function ThreadRail({
   tasksOpen,
   automationCount,
   automationsOpen,
+  guards,
+  onGuards,
   onNew,
   onOpen,
   onOpenRun,
@@ -304,6 +311,8 @@ export default function ThreadRail({
           </p>
         ) : null}
       </nav>
+
+      <SpendMeter guards={guards} onSave={onGuards} />
     </aside>
   );
 }

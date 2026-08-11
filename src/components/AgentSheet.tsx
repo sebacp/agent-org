@@ -288,6 +288,19 @@ export default function AgentSheet({
                           />
                         ))}
                       </div>
+
+                      {/* The label used to be the whole of it. Now it is also
+                        what decides whether the corrida stops and espera. */}
+                      {picked.some(
+                        (name) =>
+                          !source.tools.find((t) => t.name === name)?.readOnly,
+                      ) ? (
+                        <p className="mt-2 text-[11px] leading-relaxed text-faint">
+                          Las que escriben frenan y te piden permiso antes de
+                          correr, salvo que apagues el resguardo desde el gasto
+                          del mes.
+                        </p>
+                      ) : null}
                     </>
                   ) : null}
                 </div>

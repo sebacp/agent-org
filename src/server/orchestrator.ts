@@ -134,6 +134,7 @@ export async function runOrg(
         sources,
         agent.library,
         task,
+        { threadId: request.threadId, signal },
       );
       emit({
         type: "tool",

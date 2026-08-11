@@ -1,5 +1,6 @@
 import { useCallback, useState, type CSSProperties } from "react";
 import { useRouter } from "next/router";
+import ApprovalBar from "@/components/workspace/ApprovalBar";
 import ContextPane, {
   type ContextTab,
 } from "@/components/workspace/ContextPane";
@@ -7,8 +8,10 @@ import Conversation from "@/components/workspace/Conversation";
 import FileViewer from "@/components/workspace/FileViewer";
 import ThreadRail from "@/components/workspace/ThreadRail";
 import { useActiveRuns } from "@/hooks/useActiveRuns";
+import { useApprovals } from "@/hooks/useApprovals";
 import { useAutomations } from "@/hooks/useAutomations";
 import { useFiles } from "@/hooks/useFiles";
+import { useGuards } from "@/hooks/useGuards";
 import { useOrgEvents } from "@/hooks/useOrgEvents";
 import { useOrgGraph } from "@/hooks/useOrgGraph";
 import { useOrgMirror } from "@/hooks/useOrgMirror";
@@ -39,12 +42,16 @@ export default function Workspace({ orgId }: { orgId: string }) {
   const sources = useSources(orgId);
   const automations = useAutomations(orgId);
   const active = useActiveRuns(orgId);
+  const guards = useGuards(orgId);
+  const approvals = useApprovals(orgId);
 
   useOrgEvents(orgId, (topic) => {
     if (topic === "files") void files.refresh();
     else if (topic === "tasks") void tasks.refresh();
     else if (topic === "automations") void automations.refresh();
     else if (topic === "runs") void active.refresh();
+    else if (topic === "guards") void guards.refresh();
+    else if (topic === "approvals") void approvals.refresh();
     // A corrida that started on the server, so the hilo is new to this tab.
     else void threads.refresh();
   });
@@ -190,6 +197,8 @@ export default function Workspace({ orgId }: { orgId: string }) {
                   automations.automations.filter((a) => a.enabled).length
                 }
                 automationsOpen={tab === "automations"}
+                guards={guards.guards}
+                onGuards={(patch) => void guards.save(patch)}
                 onNew={newThread}
                 onOpen={openThread}
                 onOpenRun={openRun}
@@ -274,6 +283,14 @@ export default function Workspace({ orgId }: { orgId: string }) {
                 onCut={() => void run.cut()}
               />
             </div>
+
+            {/* Over whatever tab is open: the corrida asking is often one you
+              have nothing on screen for, and it is holding the call until you
+              answer. */}
+            <ApprovalBar
+              approvals={approvals.approvals}
+              onAnswer={(id, ok) => void approvals.answer(id, ok)}
+            />
 
             {openFileId ? (
               <FileViewer

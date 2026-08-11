@@ -1,5 +1,6 @@
 import type { Automation, AutomationDraft } from "@/lib/automation-types";
 import type { FileFilter, FileMeta, FileRecord } from "@/lib/file-types";
+import type { GuardState, Guards, PendingWrite } from "@/lib/guard-types";
 import type { ActiveRun, OrgSnapshot, Thread } from "@/lib/run-types";
 import type {
   SourceDraft,
@@ -62,6 +63,56 @@ export async function stopRun(
     { method: "DELETE" },
   );
   return stopped;
+}
+
+export async function fetchGuards(orgId: string): Promise<GuardState> {
+  const { guards } = await json<{ guards: GuardState }>(
+    `/api/guards?orgId=${encodeURIComponent(orgId)}`,
+  );
+  return guards;
+}
+
+export async function saveGuards(
+  orgId: string,
+  patch: Partial<Guards>,
+): Promise<GuardState> {
+  const { guards } = await json<{ guards: GuardState }>(
+    `/api/guards?orgId=${encodeURIComponent(orgId)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    },
+  );
+  return guards;
+}
+
+/** Every write stopped on its way out, whoever's corrida it belongs to. */
+export async function fetchApprovals(orgId: string): Promise<PendingWrite[]> {
+  const { approvals } = await json<{ approvals: PendingWrite[] }>(
+    `/api/approvals?orgId=${encodeURIComponent(orgId)}`,
+  );
+  return approvals;
+}
+
+/**
+ * False when it was no longer waiting: it timed out, or the corrida was cut
+ * while you were reading it. Nothing ran either way.
+ */
+export async function answerApproval(
+  orgId: string,
+  id: string,
+  ok: boolean,
+): Promise<boolean> {
+  const { answered } = await json<{ answered: boolean }>(
+    `/api/approvals?orgId=${encodeURIComponent(orgId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ok }),
+    },
+  );
+  return answered;
 }
 
 export async function removeThread(orgId: string, id: string): Promise<void> {

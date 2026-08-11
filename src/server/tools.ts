@@ -2,6 +2,7 @@ import { fileSize, type FileMeta } from "@/lib/file-types";
 import type { SourceRef } from "@/lib/run-types";
 import type { AllowedSource } from "@/lib/source-types";
 import type { LibraryPermission } from "@/lib/types";
+import { askApproval } from "@/server/approvals";
 import { fileLinkedAssets } from "@/server/assets";
 import {
   constants,
@@ -21,6 +22,7 @@ import {
   type Splitter,
 } from "@/server/dataset";
 import { asText, download } from "@/server/download";
+import { readGuards } from "@/server/guards";
 import {
   appendDataset,
   closeDataset,
@@ -473,6 +475,65 @@ function findGranted(
   return source ? { source, tool: named } : null;
 }
 
+/** Where the corrida is, for the calls that have to stop and ask a person. */
+export interface RunRef {
+  threadId: string;
+  signal: AbortSignal;
+}
+
+/**
+ * Stops a function that writes until somebody says yes, and answers with what
+ * to tell the agent when nobody does. Null means go ahead.
+ *
+ * Which functions write is the server's own word for it, the same
+ * `readOnlyHint` the permissions screen already renders as "escribe". One the
+ * catalog has never seen is treated as writing: of the two guesses, that is the
+ * one that costs nothing when it is wrong.
+ */
+async function heldForApproval(
+  orgId: string,
+  run: RunRef,
+  agent: { id: string; role: string },
+  source: AllowedSource,
+  tool: string,
+  args: Record<string, unknown>,
+  ref: SourceRef,
+): Promise<ToolOutcome | null> {
+  if (source.tools.find((t) => t.name === tool)?.readOnly) return null;
+  if (!(await readGuards(orgId)).approveWrites) return null;
+
+  const verdict = await askApproval(
+    orgId,
+    {
+      threadId: run.threadId,
+      agentId: agent.id,
+      role: agent.role,
+      source: ref,
+      tool,
+      args: JSON.stringify(args, null, 2).slice(0, 4000),
+    },
+    run.signal,
+  );
+  if (verdict === "yes") return null;
+
+  return {
+    summary:
+      verdict === "no"
+        ? `no le autorizaron ${tool}`
+        : `nadie autorizó ${tool}`,
+    content: [
+      verdict === "no"
+        ? `Te dijeron que no a ${tool}. No se ejecutó y no se escribió nada.`
+        : `Nadie contestó el pedido de autorización para ${tool}, así que no se ejecutó y no se escribió nada.`,
+      // Left unsaid, a model reports the thing as done: it asked for it, the
+      // call came back, and the next sentence it writes is the confirmation.
+      "No busques otra manera de hacer lo mismo ni sigas como si hubiera salido. Si hace falta, dejá un pendiente con crear_pendiente diciendo qué ibas a ejecutar y para qué.",
+    ].join(" "),
+    detail: exchange(tool, args, verdict === "no" ? "Rechazado." : "Sin respuesta."),
+    source: ref,
+  };
+}
+
 /** The last id in a page is the cursor every list API wants for the next one. */
 function lastId(records: Record<string, unknown>[]): string | null {
   const id = records.at(-1)?.id;
@@ -610,9 +671,10 @@ const MAX_DUMP_MS = 3 * 60_000;
  */
 async function dumpFromSource(
   orgId: string,
-  agent: { role: string; department: string },
+  agent: { id: string; role: string; department: string },
   sources: AllowedSource[],
   args: Record<string, unknown>,
+  run: RunRef,
 ): Promise<ToolOutcome> {
   const named = asString(args.herramienta).trim();
   const found = findGranted(sources, named);
@@ -657,6 +719,18 @@ async function dumpFromSource(
   }
 
   const callArgs = { ...asRecordArg(args.argumentos) };
+  // A volcado is a read by intent, but what it walks is whatever function was
+  // named, and it calls it two hundred times without asking again.
+  const held = await heldForApproval(
+    orgId,
+    run,
+    agent,
+    found.source,
+    found.tool,
+    callArgs,
+    ref,
+  );
+  if (held) return held;
   /**
    * What was asked for, minus how it was paged. A dump that went out with a
    * filter comes back as a whole file with nothing on it saying the listing was
@@ -1355,6 +1429,7 @@ export async function runTool(
   library: LibraryPermission[],
   /** What this agent is working on, kept on anything it leaves behind. */
   assignment: string,
+  run: RunRef,
 ): Promise<ToolOutcome> {
   let args: Record<string, unknown> = {};
   try {
@@ -1397,6 +1472,18 @@ export async function runTool(
     // The name is on the line as a chip instead of in the sentence, so the
     // summaries below say what happened and leave the whose to it.
     const ref: SourceRef = { label, url: source.url };
+    // Before the call and not after it: what a function that writes leaves
+    // behind is not something a later "no" can take back.
+    const held = await heldForApproval(
+      orgId,
+      run,
+      agent,
+      source,
+      remote.tool,
+      args,
+      ref,
+    );
+    if (held) return held;
     try {
       const whole = await callSourceTool(orgId, source, remote.tool, args);
       const { text, saved } = await fileLinkedAssets(
@@ -1588,7 +1675,7 @@ export async function runTool(
     }
 
     case "volcar_de_fuente":
-      return dumpFromSource(orgId, agent, sources, args);
+      return dumpFromSource(orgId, agent, sources, args, run);
 
     case "consultar_archivo":
       return queryFile(orgId, args);
