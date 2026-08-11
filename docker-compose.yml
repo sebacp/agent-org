@@ -1,0 +1,29 @@
+services:
+  agent-org:
+    build: .
+    image: agent-org
+    # The web app and the API share the container's loopback, so only the one
+    # the browser uses is published. Change the left half to move it.
+    ports:
+      - "${PORT:-3100}:3100"
+    # Copiá `.env.example` a `.env` y poné tu key ahí. Los dos nombres son los
+    # mismos que lee la aplicación cuando se la corre sin Docker, y ninguno hace
+    # falta si las variables ya están en el ambiente.
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.local
+        required: false
+    environment:
+      # Where the browser will come back to after authorizing a source. It is
+      # read off the request when nobody says, which is right on a laptop and
+      # wrong behind a reverse proxy that terminates TLS under another name.
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:${PORT:-3100}}
+    volumes:
+      # The org chart, the hilos, the library and the sources. Everything else
+      # in the image can be thrown away and rebuilt; this cannot.
+      - datos:/app/.data
+    restart: unless-stopped
+
+volumes:
+  datos:

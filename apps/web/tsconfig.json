@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  // Next writes the same route types twice — `.next/dev/types` when it is
+  // serving and `.next/types` when it builds — and each declares the same names
+  // in the global scope, so having run `dev` once broke every later `build`.
+  // The built ones are the ones that matter: they are what the build checks.
+  "exclude": ["node_modules", ".next/dev/types"]
+}

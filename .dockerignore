@@ -1,0 +1,24 @@
+# Installed inside the image against the lockfile: a tree built on somebody's
+# laptop has the wrong platform's binaries in it.
+node_modules
+**/node_modules
+
+# Build output, rebuilt in the image.
+.next
+**/.next
+**/dist
+**/*.tsbuildinfo
+
+# The company's data and the keys. Neither belongs in an image that gets pushed.
+.data
+.env
+.env.*
+!.env.example
+
+.git
+.gitignore
+.DS_Store
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md
