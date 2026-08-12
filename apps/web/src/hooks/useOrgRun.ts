@@ -166,11 +166,12 @@ export function useOrgRun(
   const abortRef = useRef<AbortController | null>(null);
   const watchRef = useRef<EventSource | null>(null);
 
+  // Letting go of whatever this tab was reading, which is not the same as ending
+  // it: the corrida is the server's and keeps going either way. It stays on the
+  // riel while it does, and opening it again picks the stream back up.
   const stop = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
-    // Closing the stream only stops this tab from reading: the corrida is the
-    // server's and keeps going.
     watchRef.current?.close();
     watchRef.current = null;
     setWatching(false);
@@ -333,8 +334,14 @@ export function useOrgRun(
           );
         }
       } finally {
-        if (abortRef.current === controller) abortRef.current = null;
-        setRunning(false);
+        // Only if this is still the corrida on screen. Starting another one lets
+        // go of this stream first, and this block runs after the new one already
+        // set itself up: turning the light off here left the pedido you had just
+        // escrito looking like nothing was happening.
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+          setRunning(false);
+        }
       }
     },
     [

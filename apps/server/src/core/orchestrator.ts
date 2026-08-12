@@ -6,6 +6,7 @@ import {
 } from "@agent-org/shared/run-types";
 import { modelCost, type TokenUsage } from "@agent-org/shared/usage";
 import { chat } from "./deepseek";
+import { listFolders } from "./files";
 import {
   consolidatePrompt,
   directoryPrompt,
@@ -37,6 +38,12 @@ function parseAssignments(raw: string, reports: RunAgent[]): Assignment[] {
     try {
       const parsed: unknown = JSON.parse(raw.slice(start, end + 1));
       if (Array.isArray(parsed)) {
+        // Nobody, said properly. A saludo does not need the company, and the
+        // split is asked to leave out whoever has nothing to add — which can be
+        // everyone. That is a decision, and it reads nothing like an answer
+        // that came back unreadable, which is what the broadcast is for.
+        if (parsed.length === 0) return [];
+
         const picked = new Map<string, Assignment>();
         for (const item of parsed) {
           const entry = item as Partial<Assignment>;
@@ -94,6 +101,10 @@ export async function runOrg(
   // Asked once for the whole corrida: it is a property of the machine, and it
   // decides both whether the tool is offered and whether the prompt names it.
   const penned = await sandboxReady();
+  // Also once, and deliberately not refreshed as the corrida files things: what
+  // an agent needs is the order the company already keeps, and a shelf that
+  // shifts under every save costs a cache miss per agent to say almost nothing.
+  const folders = await listFolders(request.orgId);
 
   async function execute(
     agentId: string,
@@ -105,13 +116,15 @@ export async function runOrg(
     if (!agent) return "";
 
     const sources = granted.get(agentId) ?? [];
+    const department = departmentById.get(agent.department);
     const system = systemPrompt(
       agent,
       request.company,
-      departmentById.get(agent.department),
+      department,
       directory,
       sources.map((s) => s.label || "fuente"),
       penned,
+      folders,
     );
     // Reaching a source means connecting to it, so the list is only built if a
     // branch actually offers tools.
@@ -130,7 +143,9 @@ export async function runOrg(
         request.orgId,
         toolCall.function.name,
         toolCall.function.arguments,
-        agent,
+        // The area by its name and not by its id, which is where anything this
+        // agent saves lands if it doesn't say where it goes.
+        { ...agent, areaLabel: department?.label ?? "" },
         sources,
         agent.library,
         task,
@@ -171,25 +186,30 @@ export async function runOrg(
           emit({ type: "stream", agentId, phase: "answer", text })
       : undefined;
 
+    /** Nobody under him, or nobody worth pulling in: he sits down and answers. */
+    const answerAlone = async () => {
+      emit({ type: "status", agentId, status: "working" });
+      const text = await chat({
+        apiKey,
+        model: agent.model,
+        system,
+        user: leafPrompt(task, agentId === request.rootId),
+        history,
+        tools: await tools(),
+        onTool,
+        onUsage,
+        onThinking,
+        onText,
+        signal,
+      });
+      emit({ type: "result", agentId, text });
+      emit({ type: "status", agentId, status: "done" });
+      return text;
+    };
+
     try {
       if (reports.length === 0 || depth >= RUN_LIMITS.maxDepth) {
-        emit({ type: "status", agentId, status: "working" });
-        const text = await chat({
-          apiKey,
-          model: agent.model,
-          system,
-          user: leafPrompt(task),
-          history,
-          tools: await tools(),
-          onTool,
-          onUsage,
-          onThinking,
-          onText,
-          signal,
-        });
-        emit({ type: "result", agentId, text });
-        emit({ type: "status", agentId, status: "done" });
-        return text;
+        return await answerAlone();
       }
 
       emit({ type: "status", agentId, status: "planning" });
@@ -207,6 +227,9 @@ export async function runOrg(
         signal,
       });
       const assignments = parseAssignments(plan, reports);
+      // Handing "hola" down to three areas and then summarising what came back
+      // costs the whole company and reads worse than the two words it deserved.
+      if (assignments.length === 0) return await answerAlone();
 
       emit({ type: "status", agentId, status: "waiting" });
       const nextAncestors = new Set(ancestors).add(agentId);

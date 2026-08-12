@@ -21,7 +21,8 @@ export interface RunOutcome {
 export async function executeRun(
   request: RunRequest,
   onEvent: (event: RunEvent) => void,
-  signal: AbortSignal,
+  /** Another reason to stop, on top of Cortar. An automation caps its time. */
+  signal?: AbortSignal,
 ): Promise<RunOutcome> {
   const roleOf = new Map(request.agents.map((a) => [a.id, a.role]));
   const steps: ThreadStep[] = [];
@@ -102,10 +103,8 @@ export async function executeRun(
     origin: request.origin,
     startedAt: new Date().toISOString(),
   });
-  // Either reason to stop counts: the connection dropping, or somebody saying
-  // so out of band. An automation passes a signal that never fires, and then
-  // this is the only way to reach it.
-  const stopped = AbortSignal.any([signal, asked]);
+  // Cortar always counts; whatever the caller brought counts too.
+  const stopped = signal ? AbortSignal.any([signal, asked]) : asked;
 
   try {
     const answer = await runOrg(request, send, stopped);

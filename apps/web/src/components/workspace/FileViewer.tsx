@@ -55,7 +55,7 @@ export default function FileViewer({
             </h2>
             {file ? (
               <p className="mt-1 text-[13px] text-faint">
-                {[file.author, file.area, ...file.tags]
+                {[file.author, file.area, file.folder, ...file.tags]
                   .filter(Boolean)
                   .join(" · ")}
               </p>

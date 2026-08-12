@@ -100,28 +100,25 @@ runRouter.post("/", json({ limit: "1mb" }), async (req, res) => {
   const stream = openStream(res);
   const send = (event: RunEvent) => stream.send(event);
 
-  // Cutting it short when whoever asked closes the tab, which is the response
-  // going away and not the request: that one is already over by here, since its
-  // body is what we just read.
-  const controller = new AbortController();
-  res.on("close", () => controller.abort());
-
+  // No signal, so nothing here ends the corrida but the DELETE above: it belongs
+  // to the company and not to the connection that asked for it. This one going
+  // away used to cut it, and since changing hilo lets go of the stream, leaving
+  // one running and starting another killed the first — it vanished off the riel
+  // mid-sentence. Now it stays there and /api/watch picks it back up.
   try {
-    await executeRun(request, send, controller.signal);
+    await executeRun(request, send);
   } catch (error) {
-    if (!controller.signal.aborted) {
-      send({
-        type: "error",
-        // Being cut short arrives here as the same kind of failure as anything
-        // else, and the browser's wording for it says nothing to anybody.
-        message:
-          error instanceof Error && error.name === "AbortError"
-            ? "Se cortó la corrida."
-            : error instanceof Error
-              ? error.message
-              : "Falló la corrida.",
-      });
-    }
+    send({
+      type: "error",
+      // Being cut short arrives here as the same kind of failure as anything
+      // else, and the browser's wording for it says nothing to anybody.
+      message:
+        error instanceof Error && error.name === "AbortError"
+          ? "Se cortó la corrida."
+          : error instanceof Error
+            ? error.message
+            : "Falló la corrida.",
+    });
   } finally {
     stream.close();
   }

@@ -82,7 +82,7 @@ interface ThreadRailProps {
   runs: ActiveRun[];
   fileCount: number;
   filesOpen: boolean;
-  /** All of them, so a hilo can say whether it is still waiting on something. */
+  /** All of them; the tab counts the ones that are blocked. */
   tasks: PendingTask[];
   tasksOpen: boolean;
   /** Only the ones still armed; a paused one is not going to wake up. */
@@ -134,12 +134,6 @@ export default function ThreadRail({
 }: ThreadRailProps) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const blocked = tasks.filter((t) => t.state === "blocked");
-
-  // Which hilos are still short of something. `open` counts too: you answered
-  // it, but nobody has retomado it yet, so the work it stopped is still stopped.
-  const waiting = new Set(
-    tasks.filter((t) => t.state !== "done").map((t) => t.threadId),
-  );
 
   const live = new Map(runs.map((run) => [run.threadId, run]));
 
@@ -240,14 +234,12 @@ export default function ThreadRail({
       <nav className="min-h-0 flex-1 overflow-y-auto border-t border-hairline px-3 py-3">
         {rows.map((thread) => {
           const run = live.get(thread.id);
-          // Amber while the company is on it or while it is short of something,
-          // green once it is neither. The pulse is the difference between the
-          // two ambers: one is moving, the other is stopped waiting on you.
-          const dot = run
-            ? "animate-pulse bg-warn"
-            : waiting.has(thread.id)
-              ? "bg-warn"
-              : "bg-ok";
+          // Amber while the company is on it, green the moment it stops. It
+          // used to stay amber for a hilo that had left something pending too,
+          // and since nobody ever closes what an agent could not find out, that
+          // was a hilo marked as busy forever. What is missing is counted on
+          // the Inbox tab, which is where somebody can actually act on it.
+          const dot = run ? "animate-pulse bg-warn" : "bg-ok";
 
           return (
             <div key={thread.id} className="group relative">

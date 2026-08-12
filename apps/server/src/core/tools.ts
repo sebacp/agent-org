@@ -1,4 +1,8 @@
-import { fileSize, type FileMeta } from "@agent-org/shared/file-types";
+import {
+  cleanFolder,
+  fileSize,
+  type FileMeta,
+} from "@agent-org/shared/file-types";
 import { isGranted } from "@agent-org/shared/guard-types";
 import type { SourceRef } from "@agent-org/shared/run-types";
 import type { AllowedSource } from "@agent-org/shared/source-types";
@@ -32,6 +36,8 @@ import {
   findByTitle,
   getFile,
   listFiles,
+  listFolders,
+  moveFiles,
   readDataset,
   saveBinaryFile,
   saveFile,
@@ -69,6 +75,15 @@ export interface ToolOutcome {
 
 const string = (description: string) => ({ type: "string", description });
 
+/**
+ * Said the same way everywhere it is asked for. A model copies the wording of
+ * the argument into the value, so "Área/Tema" in three places and one of them
+ * phrased differently is how a library ends up with two of every folder.
+ */
+const FOLDER_ARG = string(
+  'Carpeta donde va, "Tema" o "Tema/Subtema" (dos niveles como máximo). Reusá una de las que ya existen, que están listadas en tus instrucciones; abrí una nueva sólo si de verdad no hay dónde. Nombrala por el asunto, nunca por la fecha ni por quién lo escribió.',
+);
+
 export const TOOLS: ToolSchema[] = [
   {
     type: "function",
@@ -96,10 +111,13 @@ export const TOOLS: ToolSchema[] = [
     function: {
       name: "listar_archivos",
       description:
-        "Lista la biblioteca sin buscar por texto. Podés filtrar por área, etiqueta o autor para acotar.",
+        "Lista la biblioteca sin buscar por texto, y te dice qué carpetas hay. Llamalo sin argumentos antes de guardar algo para ver cómo está ordenada. Podés filtrar por carpeta, área, etiqueta o autor para acotar.",
       parameters: {
         type: "object",
         properties: {
+          carpeta: string(
+            'Ruta exacta de la carpeta, por ejemplo "Finanzas/Reportes". Poné "/" para ver sólo lo que quedó suelto en la raíz.',
+          ),
           area: string("Id del área, por ejemplo marketing o finance."),
           etiqueta: string("Una etiqueta exacta."),
           autor: string("Rol del agente que lo escribió, por ejemplo CFO."),
@@ -135,13 +153,16 @@ export const TOOLS: ToolSchema[] = [
         properties: {
           titulo: string("Título corto y descriptivo."),
           contenido: string("El documento entero, en texto plano."),
+          carpeta: FOLDER_ARG,
           etiquetas: {
             type: "array",
             items: { type: "string" },
             description: "Dos o tres etiquetas en minúsculas.",
           },
         },
-        required: ["titulo", "contenido"],
+        // Where it goes is asked for like the title is. Left optional, a model
+        // skips it every time and the whole library piles up at the root.
+        required: ["titulo", "contenido", "carpeta"],
       },
     },
   },
@@ -158,13 +179,14 @@ export const TOOLS: ToolSchema[] = [
           titulo: string(
             "Título corto y descriptivo. Si no ponés ninguno uso el nombre del archivo.",
           ),
+          carpeta: FOLDER_ARG,
           etiquetas: {
             type: "array",
             items: { type: "string" },
             description: "Dos o tres etiquetas en minúsculas.",
           },
         },
-        required: ["url"],
+        required: ["url", "carpeta"],
       },
     },
   },
@@ -283,6 +305,27 @@ export const TOOLS: ToolSchema[] = [
   {
     type: "function",
     function: {
+      name: "ordenar_archivos",
+      description:
+        "Mueve a una carpeta archivos que ya están en la biblioteca. Es para ordenar lo que quedó suelto: lo que subió una persona, un volcado, algo que se guardó antes de que existiera la carpeta que le corresponde. Si mientras trabajás te cruzás con archivos sin carpeta que entiendas, acomodalos de paso: mandá todos los que van al mismo lugar en una sola llamada.",
+      parameters: {
+        type: "object",
+        properties: {
+          ids: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Ids de los archivos a mover, todos a la misma carpeta. Los da listar_archivos o buscar_archivos.",
+          },
+          carpeta: FOLDER_ARG,
+        },
+        required: ["ids", "carpeta"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "borrar_archivo",
       description:
         "Borra un archivo de la biblioteca, para siempre y para todos. Usalo sólo para lo que quedó mal o duplicado, y nunca sobre algo que escribió otro sin estar seguro. Si dudás, dejalo y decilo en tu respuesta.",
@@ -335,11 +378,19 @@ export const TOOLS: ToolSchema[] = [
   },
 ];
 
+/**
+ * Where a dump lands without anybody having to say so. Nobody sits down to
+ * write one — it is the byproduct of asking a source a question — so leaving it
+ * to be filed by hand means it never is.
+ */
+const DUMP_FOLDER = "Datos";
+
 /** The library functions that only exist for an agent who was granted them. */
 const LIBRARY_GATED: Record<string, LibraryPermission> = {
   guardar_archivo: "write",
   guardar_desde_link: "write",
   volcar_de_fuente: "write",
+  ordenar_archivos: "write",
   borrar_archivo: "delete",
 };
 
@@ -450,11 +501,44 @@ function renderList(files: FileMeta[]): string {
   if (files.length === 0) return "No hay archivos que coincidan.";
   return files
     .map((f) =>
-      [f.id, f.title, `por ${f.author}`, f.mime, fileSize(f)]
+      [
+        f.id,
+        f.title,
+        f.folder ? `en ${f.folder}` : "sin carpeta",
+        `por ${f.author}`,
+        f.mime,
+        fileSize(f),
+      ]
         .filter(Boolean)
         .join(" · "),
     )
     .join("\n");
+}
+
+/**
+ * The shelf before the files on it. Every listing leads with this so an agent
+ * about to file something sees the order the company already keeps: told what
+ * exists, a model reuses it, and told nothing it invents a folder of its own
+ * every single time.
+ */
+function renderFolders(folders: { path: string; files: number }[]): string {
+  if (folders.length === 0) {
+    return "La biblioteca todavía no tiene carpetas. Abrí la primera al guardar.";
+  }
+  return [
+    "Carpetas que ya existen (usá una de estas antes de inventar otra):",
+    ...folders.map((f) => `- ${f.path} · ${f.files}`),
+  ].join("\n");
+}
+
+/**
+ * Where a save goes when the folder was left out anyway. The agent's own area
+ * is a worse shelf than one picked by subject — it sorts the library by the org
+ * chart — but it is a shelf, and files landing at the root is how a library
+ * goes back to being the pile the folders were meant to end.
+ */
+function askedFolder(raw: unknown, agent: { areaLabel?: string }): string {
+  return asString(raw).trim() || agent.areaLabel || "";
 }
 
 /**
@@ -879,6 +963,10 @@ async function dumpFromSource(
         content: body,
         author: agent.role,
         area: agent.department,
+        // Filed on the way in rather than left for somebody to tidy up: a dump
+        // is the one file nobody chose to write, and a company that polls a
+        // source weekly buries the shelf in them inside a month.
+        folder: `${DUMP_FOLDER}/${found.source.label || "Fuentes"}`,
         tags: ["datos", found.tool],
         records: records.length,
         asked,
@@ -1208,6 +1296,7 @@ async function compute(
       content: body,
       author: agent.role,
       area: agent.department,
+      folder: `${DUMP_FOLDER}/Calculados`,
       tags: ["datos", "calculado"],
       records,
     });
@@ -1458,7 +1547,13 @@ export async function runTool(
   orgId: string,
   name: string,
   rawArgs: string,
-  agent: { id: string; role: string; department: string },
+  agent: {
+    id: string;
+    role: string;
+    department: string;
+    /** The area by its name, which is where its work goes if nobody says. */
+    areaLabel?: string;
+  },
   sources: AllowedSource[],
   library: LibraryPermission[],
   /** What this agent is working on, kept on anything it leaves behind. */
@@ -1576,7 +1671,12 @@ export async function runTool(
     }
 
     case "listar_archivos": {
+      // A slash on its own is the root, which is the one folder that has no name
+      // to ask for and is exactly where everything unfiled sits.
+      const asked = asString(args.carpeta).trim();
+      const folder = asked === "/" ? "" : cleanFolder(asked);
       const files = await listFiles(orgId, {
+        folder: asked ? folder : undefined,
         area: asString(args.area) || undefined,
         tag: asString(args.etiqueta) || undefined,
         author: asString(args.autor) || undefined,
@@ -1584,7 +1684,40 @@ export async function runTool(
       });
       return {
         summary: `listó la biblioteca · ${files.length} archivo${files.length === 1 ? "" : "s"}`,
-        content: renderList(files),
+        content: [
+          renderFolders(await listFolders(orgId)),
+          renderList(files),
+        ].join("\n\n"),
+      };
+    }
+
+    case "ordenar_archivos": {
+      const ids = Array.isArray(args.ids)
+        ? args.ids.filter((id): id is string => typeof id === "string")
+        : [];
+      if (ids.length === 0) {
+        return {
+          summary: "no dijo qué ordenar",
+          content:
+            "No moví nada: vino sin ids. Sacalos de listar_archivos o buscar_archivos.",
+        };
+      }
+      const moved = await moveFiles(orgId, ids, asString(args.carpeta));
+      if (moved.length === 0) {
+        return {
+          summary: "no encontró esos archivos",
+          content:
+            "No moví nada: ninguno de esos ids está en la biblioteca. Fijate los ids con listar_archivos.",
+        };
+      }
+      // Where they landed, not where they were asked to land: a folder that
+      // already existed under another casing swallows the one just written.
+      const target = moved[0].folder;
+      return {
+        summary: `ordenó ${moved.length} archivo${moved.length === 1 ? "" : "s"} en ${target || "la raíz"}`,
+        content: `Quedaron en ${target ? `"${target}"` : "la raíz"}: ${moved
+          .map((m) => `"${m.title}"`)
+          .join(", ")}.`,
       };
     }
 
@@ -1640,13 +1773,18 @@ export async function runTool(
         content: contenido,
         author: agent.role,
         area: agent.department,
+        folder: askedFolder(args.carpeta, agent),
         tags: etiquetas,
       });
       return {
-        summary: `guardó "${meta.title}"`,
+        summary: `guardó "${meta.title}"${meta.folder ? ` en ${meta.folder}` : ""}`,
         // The id is deliberately withheld: models repeat it back at the user,
-        // and nothing needs it again within the same run.
-        content: `Guardado en la biblioteca como "${meta.title}".`,
+        // and nothing needs it again within the same run. Where it landed is
+        // said, though — the shelf in the prompt was read before this save, and
+        // a folder that snapped onto an existing one has to come back snapped.
+        content: meta.folder
+          ? `Guardado en la biblioteca como "${meta.title}", en ${meta.folder}.`
+          : `Guardado en la biblioteca como "${meta.title}".`,
         fileId: meta.id,
       };
     }
@@ -1689,6 +1827,7 @@ export async function runTool(
         title: asString(args.titulo).trim() || file.filename,
         author: agent.role,
         area: agent.department,
+        folder: askedFolder(args.carpeta, agent),
         sourceUrl: url,
         tags: Array.isArray(args.etiquetas)
           ? args.etiquetas.filter((t): t is string => typeof t === "string")

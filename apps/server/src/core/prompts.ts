@@ -83,6 +83,30 @@ ${lines.join("\n")}
 Las herramientas conectadas están repartidas: vos sólo podés llamar a las tuyas. Si lo que te falta lo tiene otro rol, nombralo en vez de pedir credenciales.`;
 }
 
+/** Past this the shelf stops being context and turns into a directory dump. */
+const SHELF_MAX = 60;
+
+/**
+ * The shelf written into the prompt instead of left for a tool call. Picking a
+ * folder is a required argument of saving, and an argument that can only be
+ * answered by calling something else first is one a model answers badly: it
+ * invents a folder of its own, or drops everything at the root and moves on.
+ */
+function shelfPrompt(folders: { path: string; files: number }[]): string {
+  if (folders.length === 0) {
+    return "Todavía no hay ninguna carpeta: la primera la abrís vos al guardar.";
+  }
+  const shown = folders.slice(0, SHELF_MAX);
+  const rest = folders.length - shown.length;
+  return [
+    "Carpetas que ya existen, con cuántos archivos hay en cada una:",
+    ...shown.map((f) => `- ${f.path} · ${f.files}`),
+    rest > 0 ? `- …y ${rest} más: pedilas con listar_archivos.` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 /**
  * The three inheritance layers the wizard promises, in the order the UI shows
  * them: company purpose, then area mission, then the agent's own instructions.
@@ -97,6 +121,8 @@ export function systemPrompt(
   sources: string[] = [],
   /** Whether this machine can run a script safely; if not, it isn't offered. */
   penned = false,
+  /** The library's shelf as it stands, same list for everyone. */
+  folders: { path: string; files: number }[] = [],
 ): string {
   const blocks = [
     `Trabajás en ${company.name.trim() || "la compañía"}.`,
@@ -107,10 +133,23 @@ export function systemPrompt(
     `Tu rol es ${agent.role.trim() || "sin rol"}${
       agent.name.trim() ? ` (${agent.name.trim()})` : ""
     }.\n${agent.instructions.trim()}`,
-    `La empresa tiene una biblioteca de archivos compartida. Antes de responder algo que ya podría estar escrito, buscá ahí con buscar_archivos o listar_archivos, y leé lo que sirva con leer_archivo.`,
+    `La empresa tiene una biblioteca de archivos compartida, ordenada en carpetas. Antes de responder algo que ya podría estar escrito, buscá ahí con buscar_archivos o listar_archivos, y leé lo que sirva con leer_archivo; listar_archivos también te deja pedir una carpeta sola.
+
+${shelfPrompt(folders)}`,
     agent.library.includes("write")
       ? `Si producís algo que valga la pena conservar (un plan, un análisis, un texto terminado), guardalo con guardar_archivo y mencioná en tu respuesta que lo guardaste. Para una respuesta corta no hace falta guardar nada. Lo que una fuente devuelve como archivo (una imagen, un CSV, un PDF) se guarda solo apenas llega, así que nombralo por su título y no por su link. Un link que venga de otro lado bajalo con guardar_desde_link.`
       : `No podés escribir en la biblioteca: devolvé el trabajo terminado en tu respuesta para que lo guarde quien corresponda.`,
+    // A shelf nobody keeps is a shelf nobody reads: a hundred files at the root
+    // named by whoever happened to write them is the same as no library. The
+    // rules are few on purpose — every extra one is another way for two agents
+    // to file the same thing in two places.
+    agent.library.includes("write") &&
+      `Ordenar la biblioteca es parte del trabajo, no algo aparte. Cómo se ordena:
+- Todo lo que guardes va en una carpeta: carpeta es obligatorio en guardar_archivo y en guardar_desde_link. La raíz es para lo que todavía nadie acomodó, no un lugar donde dejar cosas.
+- Elegí una de las carpetas de la lista de arriba, que es la biblioteca tal como está hoy. Abrí una nueva sólo si de verdad ninguna sirve: dos carpetas que dicen lo mismo con otras palabras son peor que ninguna.
+- Dos niveles como máximo, "Tema" o "Tema/Subtema", y nombralas por el asunto. Nunca por la fecha ni por quién lo escribió: el archivo ya guarda las dos cosas y ahí sí se pueden filtrar.
+- Si mientras trabajás te cruzás con archivos sueltos que entendés — algo que subió una persona, un volcado viejo —, acomodalos con ordenar_archivos y seguí. No hace falta que te lo pidan ni que lo anuncies.
+- Ordenar no es reorganizar. No muevas lo que ya está bien puesto ni cambies el criterio de otro porque vos lo habrías hecho distinto: si te parece que el orden está mal, decilo en tu respuesta en vez de rehacerlo.`,
     agent.library.includes("delete") &&
       `Podés borrar archivos con borrar_archivo, y eso no se deshace. Usalo sólo para lo que quedó mal o duplicado; ante la duda dejalo y decilo.`,
     sources.length > 0 &&
@@ -149,12 +188,20 @@ export function systemPrompt(
   return blocks.filter(Boolean).join("\n\n");
 }
 
-export function leafPrompt(task: string): string {
-  return `Tu manager te encargó esto:
+/**
+ * The same instruction with the right sender. Whoever heads the chart has no
+ * manager, and being told he does made him answer a greeting by explaining what
+ * he had been asked to do.
+ */
+export function leafPrompt(task: string, asked = false): string {
+  const [intro, tag] = asked
+    ? ["Te escribieron esto:", "mensaje"]
+    : ["Tu manager te encargó esto:", "encargo"];
+  return `${intro}
 
-<encargo>
+<${tag}>
 ${task}
-</encargo>
+</${tag}>
 
 Resolvelo vos, con tu criterio y tu especialidad. No delegues ni pidas permiso.`;
 }
@@ -195,6 +242,7 @@ y sin bloque de código:
 
 Reglas:
 - Incluí únicamente a quienes aportan de verdad. Si a alguien no le toca, dejalo afuera.
+- Si no le toca a nadie — un saludo, una charla, algo que contestás vos en dos líneas —, devolvé [] y lo resolvés vos. Repartirlo igual hace trabajar a la empresa entera para nada.
 - Lo que necesite una herramienta conectada va para quien la tiene, aunque el tema parezca de otro. Nadie más la puede llamar.
 - Cada encargo se tiene que entender solo: nada de "lo anterior" ni referencias al resto del equipo.
 - Si hay un archivo de por medio, nombralo por su título en la biblioteca. No copies links ni ids adentro del encargo.

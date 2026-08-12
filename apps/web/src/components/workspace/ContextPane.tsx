@@ -14,7 +14,12 @@ import SecurityBoard from "@/components/workspace/SecurityBoard";
 import TaskBoard from "@/components/workspace/TaskBoard";
 import { fileThumbUrl } from "@/lib/api";
 import type { Automation, AutomationDraft } from "@agent-org/shared/automation-types";
-import { isDataset, isImage, type FileMeta } from "@agent-org/shared/file-types";
+import {
+  folderKey,
+  isDataset,
+  isImage,
+  type FileMeta,
+} from "@agent-org/shared/file-types";
 import type { GuardState, Guards } from "@agent-org/shared/guard-types";
 import type { PendingTask, TaskAttachment } from "@agent-org/shared/task-types";
 import type { AgentNode, OrgEdge } from "@agent-org/shared/types";
@@ -73,6 +78,39 @@ function fileIcon(file: FileMeta): IconName {
   if (isDataset(file)) return "table";
   const ext = file.title.toLowerCase().split(".").pop() ?? "";
   return EXT[ext] ?? (file.mime ? "attachment" : "doc");
+}
+
+/**
+ * The shelf at one level: the folders that open from here, and the files that
+ * were left here rather than inside one of them. Nothing is stored about a
+ * folder anywhere — it is only the paths the files carry, read one segment at a
+ * time — so an empty one cannot exist and never has to be cleaned up.
+ */
+function shelfAt(files: FileMeta[], at: string) {
+  const here = at ? `${at}/` : "";
+  const folders = new Map<string, { name: string; files: number }>();
+  const loose: FileMeta[] = [];
+
+  for (const file of files) {
+    const path = file.folder ?? "";
+    if (folderKey(path) === folderKey(at)) {
+      loose.push(file);
+      continue;
+    }
+    if (at && !folderKey(path).startsWith(folderKey(here))) continue;
+    const name = path.slice(here.length).split("/")[0];
+    if (!name) continue;
+    const found = folders.get(folderKey(name)) ?? { name, files: 0 };
+    found.files += 1;
+    folders.set(folderKey(name), found);
+  }
+
+  return {
+    folders: [...folders.values()].sort((a, b) =>
+      a.name.localeCompare(b.name, "es"),
+    ),
+    loose,
+  };
 }
 
 /**
@@ -178,6 +216,13 @@ export default function ContextPane({
 }: ContextPaneProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
+  /** Which shelf of the library is open. "" is the root. */
+  const [folder, setFolder] = useState("");
+  // A search reads the whole library, so while there is one the folders step
+  // aside: what you are looking for is usually the thing you can't find.
+  const searching = query.trim().length > 0;
+  const shelf = shelfAt(files, folder);
+  const crumbs = folder.split("/").filter(Boolean);
   const blocked = tasks.filter((t) => t.state === "blocked").length;
   const agentOptions = nodes.map((node) => ({
     id: node.id,
@@ -356,8 +401,61 @@ export default function ContextPane({
               />
             </div>
 
+            {crumbs.length > 0 && !searching ? (
+              <div className="flex items-center gap-1 border-b border-hairline px-4 py-2 text-[12px] text-faint">
+                <button
+                  type="button"
+                  onClick={() => setFolder("")}
+                  className="transition-colors hover:text-ink"
+                >
+                  Biblioteca
+                </button>
+                {crumbs.map((name, depth) => (
+                  <span key={name} className="flex items-center gap-1">
+                    <span>/</span>
+                    {depth === crumbs.length - 1 ? (
+                      <span className="text-ink">{name}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFolder(crumbs.slice(0, depth + 1).join("/"))
+                        }
+                        className="transition-colors hover:text-ink"
+                      >
+                        {name}
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              {files.map((file) => (
+              {searching
+                ? null
+                : shelf.folders.map((sub) => (
+                    <button
+                      key={sub.name}
+                      type="button"
+                      onClick={() =>
+                        setFolder(folder ? `${folder}/${sub.name}` : sub.name)
+                      }
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-raised/60"
+                    >
+                      <span className="text-faint">
+                        <Icon name="folder" />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
+                        {sub.name}
+                      </span>
+                      <span className="text-[12px] text-faint">
+                        {sub.files}
+                      </span>
+                    </button>
+                  ))}
+
+              {(searching ? files : shelf.loose).map((file) => (
                 <div key={file.id} className="group relative">
                   <button
                     type="button"
@@ -382,7 +480,15 @@ export default function ContextPane({
                           <Avatar seed={byRole[file.author]} size={14} />
                         ) : null}
                         <span className="truncate">
-                          {[file.author, file.area, whenLabel(file.createdAt)]
+                          {[
+                            file.author,
+                            file.area,
+                            // A search reads the whole library, so a result can
+                            // come from anywhere: where it sits is half of what
+                            // you learn by finding it.
+                            searching ? file.folder : null,
+                            whenLabel(file.createdAt),
+                          ]
                             .filter(Boolean)
                             .join(" · ")}
                         </span>
@@ -400,11 +506,17 @@ export default function ContextPane({
                 </div>
               ))}
 
-              {files.length === 0 ? (
+              {/* Nothing to show here, which is not the same as an empty
+                library: a folder whose files all live in its subfolders has
+                plenty in it and nothing of its own to list. */}
+              {shelf.folders.length === 0 &&
+              (searching ? files : shelf.loose).length === 0 ? (
                 <p className="px-3 py-8 text-[13px] leading-relaxed text-faint">
-                  {query
+                  {searching
                     ? "Nada con esa búsqueda."
-                    : "Vacía por ahora. Los agentes guardan acá lo que vale la pena conservar."}
+                    : folder
+                      ? "Esta carpeta quedó vacía."
+                      : "Vacía por ahora. Los agentes guardan acá lo que vale la pena conservar."}
                 </p>
               ) : null}
             </div>

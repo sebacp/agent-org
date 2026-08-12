@@ -4,6 +4,12 @@ export interface FileMeta {
   /** Role of the agent that wrote it, so the library reads like a company's. */
   author: string;
   area: string;
+  /**
+   * Where it sits on the shelf: "Finanzas/Reportes mensuales", or absent for
+   * what nobody has filed yet. The folder is written on the file and nowhere
+   * else, so there is no such thing as an empty one to clean up later.
+   */
+  folder?: string;
   tags: string[];
   /** How big the body is: characters when it is text, bytes when it isn't. */
   chars: number;
@@ -71,5 +77,47 @@ export interface FileFilter {
   area?: string;
   tag?: string;
   author?: string;
+  /** That exact folder and not what hangs below it; "" is the root. */
+  folder?: string;
   limit?: number;
+}
+
+/**
+ * Two. A shelf you can take in at a glance beats a filing cabinet that is
+ * perfectly organised and that nobody ever opens past the first drawer.
+ */
+export const FOLDER_DEPTH = 2;
+
+const SEGMENT_CHARS = 40;
+
+/** As it will be written: "/ Finanzas //reportes / " becomes "Finanzas/reportes". */
+export function cleanFolder(raw: string): string {
+  return raw
+    .split("/")
+    .map((part) => part.trim().replace(/\s+/g, " ").slice(0, SEGMENT_CHARS))
+    .filter(Boolean)
+    .slice(0, FOLDER_DEPTH)
+    .join("/");
+}
+
+/** Two folders that read the same to a person are the same folder. */
+export function folderKey(folder: string): string {
+  return folder
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
+/** Every folder the paths imply, parents included, in reading order. */
+export function folderTree(files: Pick<FileMeta, "folder">[]): string[] {
+  const found = new Map<string, string>();
+  for (const file of files) {
+    const parts = cleanFolder(file.folder ?? "").split("/").filter(Boolean);
+    for (let depth = 1; depth <= parts.length; depth += 1) {
+      const path = parts.slice(0, depth).join("/");
+      const key = folderKey(path);
+      if (!found.has(key)) found.set(key, path);
+    }
+  }
+  return [...found.values()].sort((a, b) => a.localeCompare(b, "es"));
 }

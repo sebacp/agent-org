@@ -8,7 +8,14 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import type { FileFilter, FileMeta, FileRecord } from "@agent-org/shared/file-types";
+import {
+  cleanFolder,
+  folderKey,
+  folderTree,
+  type FileFilter,
+  type FileMeta,
+  type FileRecord,
+} from "@agent-org/shared/file-types";
 import { isSafeId } from "@agent-org/shared/id";
 import { publish } from "./bus";
 import {
@@ -118,7 +125,79 @@ function onShelf(meta: FileMeta, filter: FileFilter): boolean {
   if (filter.area && meta.area !== filter.area) return false;
   if (filter.author && meta.author !== filter.author) return false;
   if (filter.tag && !meta.tags.includes(filter.tag)) return false;
+  if (
+    filter.folder !== undefined &&
+    folderKey(meta.folder ?? "") !== folderKey(filter.folder)
+  ) {
+    return false;
+  }
   return true;
+}
+
+/** Every folder in the library, parents included, with what sits in each. */
+export async function listFolders(
+  orgId: string,
+): Promise<{ path: string; files: number }[]> {
+  const index = await readIndex(orgId);
+  // What hangs below it counts. A folder whose files all live in its subfolders
+  // would otherwise be listed as empty, and an empty folder reads like an
+  // invitation to open another one next to it.
+  return folderTree(index).map((path) => {
+    const key = folderKey(path);
+    return {
+      path,
+      files: index.filter((meta) => {
+        const on = folderKey(meta.folder ?? "");
+        return on === key || on.startsWith(`${key}/`);
+      }).length,
+    };
+  });
+}
+
+/**
+ * The folder as it will be written, snapped onto one already on the shelf when
+ * the two differ only in case or accents. A model writes "finanzas" on one call
+ * and "Finanzas" on the next, and two folders that read the same to a person are
+ * worse than no folders at all.
+ */
+async function settleFolder(orgId: string, raw: string): Promise<string> {
+  const wanted = cleanFolder(raw);
+  if (!wanted) return "";
+
+  const known = new Map(
+    folderTree(await readIndex(orgId)).map((path) => [folderKey(path), path]),
+  );
+  // Segment by segment, so a new subfolder still lands under the parent that is
+  // already there instead of opening a second one beside it.
+  let path = "";
+  for (const part of wanted.split("/")) {
+    const next = path ? `${path}/${part}` : part;
+    path = known.get(folderKey(next)) ?? next;
+  }
+  return path;
+}
+
+/** Filing what is already on the shelf. An unknown id is simply not moved. */
+export async function moveFiles(
+  orgId: string,
+  ids: string[],
+  folder: string,
+): Promise<FileMeta[]> {
+  const target = await settleFolder(orgId, folder);
+  const wanted = new Set(ids);
+  const moved: FileMeta[] = [];
+
+  const index = (await readIndex(orgId)).map((meta) => {
+    if (!wanted.has(meta.id)) return meta;
+    const updated = { ...meta };
+    if (target) updated.folder = target;
+    else delete updated.folder;
+    moved.push(updated);
+    return updated;
+  });
+
+  if (moved.length > 0) await writeIndex(orgId, index);
+  return moved;
 }
 
 /** Accents are half the words here and nobody types them the same way twice. */
@@ -421,6 +500,8 @@ interface FileInput {
   title: string;
   author: string;
   area: string;
+  /** Where to file it. Empty leaves it at the root for somebody to sort out. */
+  folder?: string;
   tags?: string[];
   sourceUrl?: string;
   records?: number;
@@ -438,12 +519,18 @@ export async function findBySourceUrl(
   return (await readIndex(orgId)).find((m) => m.sourceUrl === url) ?? null;
 }
 
-function newMeta(input: FileInput, chars: number, mime?: string): FileMeta {
+function newMeta(
+  input: FileInput,
+  chars: number,
+  folder: string,
+  mime?: string,
+): FileMeta {
   return {
     id: randomUUID(),
     title: input.title.trim().slice(0, 160) || "Sin título",
     author: input.author,
     area: input.area,
+    ...(folder ? { folder } : {}),
     tags: (input.tags ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean),
     chars,
     ...(mime ? { mime } : {}),
@@ -471,7 +558,12 @@ export async function saveFile(
   orgId: string,
   input: FileInput & { content: string },
 ): Promise<FileMeta> {
-  return store(orgId, newMeta(input, input.content.length), input.content);
+  const folder = await settleFolder(orgId, input.folder ?? "");
+  return store(
+    orgId,
+    newMeta(input, input.content.length, folder),
+    input.content,
+  );
 }
 
 /**
@@ -483,9 +575,10 @@ export async function saveBinaryFile(
   orgId: string,
   input: FileInput & { bytes: Buffer; mime: string },
 ): Promise<FileMeta> {
+  const folder = await settleFolder(orgId, input.folder ?? "");
   return store(
     orgId,
-    newMeta(input, input.bytes.byteLength, input.mime),
+    newMeta(input, input.bytes.byteLength, folder, input.mime),
     input.bytes,
   );
 }

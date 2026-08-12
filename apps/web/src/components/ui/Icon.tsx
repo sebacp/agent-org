@@ -60,6 +60,9 @@ const SHAPES = {
       <path d="M5.5 13.3V9.7h5v3.6" />
     </>
   ),
+  folder: (
+    <path d="M2.2 4.3a1.4 1.4 0 0 1 1.4-1.4h2.5l1.6 1.8h4.7a1.4 1.4 0 0 1 1.4 1.4v5.6a1.4 1.4 0 0 1-1.4 1.4H3.6a1.4 1.4 0 0 1-1.4-1.4z" />
+  ),
   check: <path d="m3.4 8.4 3 3.1 6.2-6.9" />,
 } satisfies Record<string, ReactNode>;
 
